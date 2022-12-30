@@ -6,5 +6,3 @@ __mlibc_start_thread:
 	pop %rsi
 	pop %rdx
 	call __mlibc_enter_thread
-.section .note.GNU-stack,"",%progbits
-

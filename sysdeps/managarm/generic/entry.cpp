@@ -12,7 +12,6 @@
 #include <mlibc/elf/startup.h>
 
 #include <protocols/posix/data.hpp>
-#include <protocols/posix/supercalls.hpp>
 
 // defined by the POSIX library
 void __mlibc_initLocale();
@@ -39,7 +38,7 @@ namespace {
 
 	void actuallyCacheInfos() {
 		posix::ManagarmProcessData data;
-		HEL_CHECK(helSyscall1(kHelCallSuper + posix::superGetProcessData, reinterpret_cast<HelWord>(&data)));
+		HEL_CHECK(helSyscall1(kHelCallSuper + 1, reinterpret_cast<HelWord>(&data)));
 
 		__mlibc_posix_lane = data.posixLane;
 		__mlibc_cached_thread_page = data.threadPage;
@@ -68,7 +67,7 @@ SignalGuard::~SignalGuard() {
 	if(!__mlibc_gsf_nesting) {
 		unsigned int result = __atomic_exchange_n(p, 0, __ATOMIC_RELAXED);
 		if(result == 2) {
-			HEL_CHECK(helSyscall0(kHelCallSuper + posix::superSigRaise));
+			HEL_CHECK(helSyscall0(kHelCallSuper + 8));
 		}else{
 			__ensure(result == 1);
 		}

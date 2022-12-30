@@ -14,7 +14,6 @@ libc_sources += files(
 	'generic/lookup.cpp',
 	'generic/netdb-stubs.cpp',
 	'generic/net-if-stubs.cpp',
-	'generic/poll.cpp',
 	'generic/posix_ctype.cpp',
 	'generic/posix-file-io.cpp',
 	'generic/posix_locale.cpp',

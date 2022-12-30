@@ -7,5 +7,3 @@ __mlibc_start_thread:
 	add sp, sp, #24
 	bl __mlibc_enter_thread
 
-.section .note.GNU-stack,"",%progbits
-

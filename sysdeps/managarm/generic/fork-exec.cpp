@@ -21,16 +21,31 @@
 #include <mlibc/thread-entry.hpp>
 #include <mlibc/all-sysdeps.hpp>
 #include <posix.frigg_bragi.hpp>
-#include <protocols/posix/supercalls.hpp>
 
 namespace mlibc {
 
 int sys_futex_tid() {
-	HelWord tid = 0;
-	HEL_CHECK(helSyscall0_1(kHelCallSuper + posix::superGetTid,
-				&tid));
+	SignalGuard sguard;
 
-	return tid;
+	managarm::posix::GetTidRequest<MemoryAllocator> req(getSysdepsAllocator());
+
+	auto [offer, sendHead, recvResp] =
+		exchangeMsgsSync(
+			getPosixLane(),
+			helix_ng::offer(
+				helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+				helix_ng::recvInline()
+			)
+		);
+
+	HEL_CHECK(offer.error());
+	HEL_CHECK(sendHead.error());
+	HEL_CHECK(recvResp.error());
+
+	managarm::posix::SvrResponse<MemoryAllocator> resp(getSysdepsAllocator());
+	resp.ParseFromArray(recvResp.data(), recvResp.length());
+	__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
+	return resp.pid();
 }
 
 int sys_futex_wait(int *pointer, int expected, const struct timespec *time) {
@@ -103,7 +118,7 @@ int sys_waitpid(pid_t pid, int *status, int flags, struct rusage *ru, pid_t *ret
 
 void sys_exit(int status) {
 	// This implementation is inherently signal-safe.
-	HEL_CHECK(helSyscall1(kHelCallSuper + posix::superExit, status));
+	HEL_CHECK(helSyscall1(kHelCallSuper + 4, status));
 	__builtin_trap();
 }
 
@@ -146,7 +161,7 @@ int sys_fork(pid_t *child) {
 	__ensure(!res);
 
 	HelWord out;
-	HEL_CHECK(helSyscall0_1(kHelCallSuper + posix::superFork, &out));
+	HEL_CHECK(helSyscall0_1(kHelCallSuper + 2, &out));
 	*child = out;
 
 	if(!out) {
@@ -172,7 +187,7 @@ int sys_execve(const char *path, char *const argv[], char *const envp[]) {
 
 	uintptr_t out;
 
-	HEL_CHECK(helSyscall6_1(kHelCallSuper + posix::superExecve,
+	HEL_CHECK(helSyscall6_1(kHelCallSuper + 3,
 			reinterpret_cast<uintptr_t>(path),
 			strlen(path),
 			reinterpret_cast<uintptr_t>(args_area.data()),
@@ -418,7 +433,8 @@ pid_t sys_getpid() {
 	HelAction actions[3];
 	globalQueue.trim();
 
-	managarm::posix::GetPidRequest<MemoryAllocator> req(getSysdepsAllocator());
+	managarm::posix::CntRequest<MemoryAllocator> req(getSysdepsAllocator());
+	req.set_request_type(managarm::posix::CntReqType::GET_PID);
 
 	frg::string<MemoryAllocator> ser(getSysdepsAllocator());
 	req.SerializeToString(&ser);
@@ -614,7 +630,7 @@ int sys_getrusage(int scope, struct rusage *usage) {
 
 int sys_clone(void *tcb, pid_t *pid_out, void *stack) {
 	HelWord pid = 0;
-	HEL_CHECK(helSyscall2_1(kHelCallSuper + posix::superClone,
+	HEL_CHECK(helSyscall2_1(kHelCallSuper + 9,
 				reinterpret_cast<HelWord>(__mlibc_start_thread),
 				reinterpret_cast<HelWord>(stack),
 				&pid));
@@ -638,7 +654,7 @@ int sys_tcb_set(void *pointer) {
 
 void sys_thread_exit() {
 	// This implementation is inherently signal-safe.
-	HEL_CHECK(helSyscall1(kHelCallSuper + posix::superExit, 0));
+	HEL_CHECK(helSyscall1(kHelCallSuper + 4, 0));
 	__builtin_trap();
 }
 

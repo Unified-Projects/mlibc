@@ -7,5 +7,3 @@ _init:
 .global _fini
 _fini:
 	push %rax
-.section .note.GNU-stack,"",%progbits
-

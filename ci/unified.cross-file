@@ -6,7 +6,7 @@ cpp = 'g++-10'
 needs_exe_wrapper = true
 
 [host_machine]
-system = 'lemon'
+system = 'unified'
 cpu_family = 'x86_64'
 cpu = 'x86_64'
 endian = 'little'

@@ -7,5 +7,3 @@ _start:
 	bl interpreterMain
 
 	br x0
-.section .note.GNU-stack,"",%progbits
-

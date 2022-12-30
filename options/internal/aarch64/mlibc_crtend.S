@@ -18,5 +18,3 @@ __CTOR_END__:
 .global __DTOR_END__
 __DTOR_END__:
 
-.section .note.GNU-stack,"",%progbits
-

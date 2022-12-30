@@ -184,10 +184,7 @@ static long syscalln6(uint64_t call, uint64_t arg0, uint64_t arg1, uint64_t arg2
 
     template<typename... T>
     __attribute__((always_inline)) static inline long syscall(uint64_t call, T... args){
-        long ret = _syscall(call, (uint64_t)(args)...);
-        if(call != 0) // Temporary fix to my stack issue. Not sure on the cause and will ned to debug more!
-            mlibc::infoLogger() << "Syscall Returned" << frg::endlog;
-        return ret;
+        return _syscall(call, (uint64_t)(args)...);
     }
 #else
     #define GET_SYSCALL(a0, a1, a2, a3, a4, a5, a6, name, ...) name

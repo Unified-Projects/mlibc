@@ -6,5 +6,3 @@ _start:
     call __mlibc_entry
 
 .size _start, . - _start
-.section .note.GNU-stack,"",%progbits
-

@@ -4,6 +4,7 @@ if disable_linux_option
 endif
 libc_sources += files(
 	'generic/mntent-stubs.cpp',
+	'generic/poll-stubs.cpp',
 	'generic/pty-stubs.cpp',
 	'generic/sys-epoll.cpp',
 	'generic/sys-inotify-stubs.cpp',

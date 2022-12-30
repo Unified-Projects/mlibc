@@ -6,5 +6,3 @@ _start:
 	add x0, x0, :lo12:main
 	bl __mlibc_entry
 
-.section .note.GNU-stack,"",%progbits
-

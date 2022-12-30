@@ -25,5 +25,3 @@ __mlibc_syscall_end:
 cancel:
 	call __mlibc_do_cancel
 	hlt
-.section .note.GNU-stack,"",%progbits
-

@@ -19,5 +19,3 @@ __mlibc_spawn_thread:
 	hlt
 1:
 	ret
-.section .note.GNU-stack,"",%progbits
-
