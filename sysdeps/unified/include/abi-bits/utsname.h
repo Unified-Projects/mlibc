@@ -1,1 +1,1 @@
-../../../../abis/lemon/utsname.h
+../../../../abis/unified/utsname.h

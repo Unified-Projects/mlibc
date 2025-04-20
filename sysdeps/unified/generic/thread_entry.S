@@ -7,3 +7,4 @@ __mlibc_start_thread:
 	pop %rdx
 	call __mlibc_enter_thread
 
+.section .note.GNU-stack,"",%progbits

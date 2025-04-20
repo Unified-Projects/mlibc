@@ -14,6 +14,7 @@ libc_sources += files(
 	'generic/entry.cpp',
 	'generic/filesystem.cpp',
 	'generic/unified.cpp',
+	'generic/pty.cpp',
 	'generic/signals.cpp',
 	'generic/sockets.cpp',
 	'generic/thread_entry.S',
@@ -89,4 +90,3 @@ if not headers_only
 		install_dir: get_option('libdir')
 	)
 endif
-

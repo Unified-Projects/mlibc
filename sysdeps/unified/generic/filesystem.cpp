@@ -276,11 +276,14 @@ int sys_fcntl(int fd, int request, va_list args, int* result){
 	} else if (request == F_DUPFD_CLOEXEC) {
 		return sys_dup(fd, O_CLOEXEC, result);
 	} else if(request == F_GETFD){
-		*result = 0; // Unified does not support O_CLOEXEC
+		*result = 0;
 		return 0;
 	} else if(request == F_SETFD){
-		*result = 0; // Unified does not support O_CLOEXEC
-		return 0;
+		if(va_arg(args, int) & FD_CLOEXEC) {
+			return sys_ioctl(fd, FIOCLEX, NULL, result);
+		} else {
+			return sys_ioctl(fd, FIONCLEX, NULL, result);
+		}
 	} else if(request == F_GETFL){
 		int ret = syscall(SYS_GET_FILE_STATUS_FLAGS, fd);
 		if(ret < 0){

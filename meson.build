@@ -251,7 +251,7 @@ elif host_machine.system() == 'vinix'
 	libc_include_dirs += include_directories('sysdeps/vinix/include')
 	subdir('sysdeps/vinix')
 elif host_machine.system() == 'unified'
-	rtdl_include_dirs += include_directories('sysdeps/unified/include')
+	rtld_include_dirs += include_directories('sysdeps/unified/include')
 	libc_include_dirs += include_directories('sysdeps/unified/include')
 	subdir('sysdeps/unified')
 elif host_machine.system() == 'dripos'
