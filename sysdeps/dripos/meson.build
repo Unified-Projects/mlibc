@@ -1,5 +1,11 @@
+sysdep_supported_options = {
+	'posix': true,
+	'linux': false,
+	'glibc': true,
+	'bsd': true,
+}
 
-rtdl_sources += files(
+rtld_sources += files(
 	'generic/generic.cpp'
 )
 
@@ -20,6 +26,7 @@ if not no_headers
 		'include/abi-bits/in.h',
 		'include/abi-bits/resource.h',
 		'include/abi-bits/stat.h',
+		'include/abi-bits/statx.h',
 		'include/abi-bits/signal.h',
 		'include/abi-bits/socket.h',
 		'include/abi-bits/termios.h',
@@ -42,6 +49,7 @@ if not no_headers
 		'include/abi-bits/packet.h',
 		'include/abi-bits/inotify.h',
 		'include/abi-bits/clockid_t.h',
+		'include/abi-bits/ipc.h',
 		'include/abi-bits/shm.h',
 		'include/abi-bits/mqueue.h',
 		'include/abi-bits/suseconds_t.h',
@@ -50,7 +58,14 @@ if not no_headers
 		'include/abi-bits/socklen_t.h',
 		'include/abi-bits/statfs.h',
 		'include/abi-bits/statvfs.h',
-		subdir: 'abi-bits'
+		'include/abi-bits/ioctls.h',
+		'include/abi-bits/xattr.h',
+		'include/abi-bits/msg.h',
+		'include/abi-bits/rlim_t.h',
+		'include/abi-bits/sigval.h',
+		'include/abi-bits/sigevent.h',
+		subdir: 'abi-bits',
+		follow_symlinks: true
 	)
 endif
 

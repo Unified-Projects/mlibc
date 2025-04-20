@@ -6,7 +6,7 @@
 #include <frg/slab.hpp>
 #include <internal-config.h>
 
-#ifndef MLIBC_DEBUG_ALLOCATOR
+#if !MLIBC_DEBUG_ALLOCATOR
 
 struct VirtualAllocator {
 public:
@@ -28,6 +28,7 @@ struct MemoryAllocator {
 	void free(void *ptr);
 	void deallocate(void *ptr, size_t size);
 	void *reallocate(void *ptr, size_t size);
+	size_t get_size(void *ptr);
 };
 
 MemoryAllocator &getAllocator();

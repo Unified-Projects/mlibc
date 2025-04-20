@@ -6,17 +6,19 @@
 extern "C" {
 #endif
 
-#define GRND_RANDOM 1
-#define GRND_NONBLOCK 2
-
+#include <abi-bits/random.h>
 #include <bits/ssize_t.h>
 #include <bits/size_t.h>
 
-ssize_t getrandom(void *, size_t, unsigned int);
+#ifndef __MLIBC_ABI_ONLY
+
+ssize_t getrandom(void *__buffer, size_t __max_size, unsigned int __flags);
+
+#endif /* !__MLIBC_ABI_ONLY */
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif //_SYS_RANDOM_H
+#endif /*_SYS_RANDOM_H */
 

@@ -69,7 +69,9 @@ typedef int nl_item;
 #define CRNCYSTR 0x40000
 
 #define RADIXCHAR 0x50000
+#define DECIMAL_POINT RADIXCHAR
 #define THOUSEP 0x50001
+#define THOUSANDS_SEP THOUSEP
 
 #define YESEXPR 0x70000
 #define NOEXPR 0x70001
@@ -78,5 +80,5 @@ typedef int nl_item;
 }
 #endif
 
-#endif // _NL_ITEM_H
+#endif /* _NL_ITEM_H */
 

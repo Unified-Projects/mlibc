@@ -10,7 +10,7 @@
 struct file_window {
 	file_window(const char *path) {
 		int fd;
-		if(mlibc::sys_open("/etc/localtime", O_RDONLY, 0, &fd))
+		if(mlibc::sys_open(path, O_RDONLY, 0, &fd))
 			mlibc::panicLogger() << "mlibc: Error opening file_window to "
 					<< path << frg::endlog;
 
@@ -22,7 +22,7 @@ struct file_window {
 		if(mlibc::sys_stat(mlibc::fsfd_target::fd, fd, "", 0, &info))
 			mlibc::panicLogger() << "mlibc: Error getting TZinfo stats" << frg::endlog;
 
-#ifdef MLIBC_MAP_FILE_WINDOWS
+#if MLIBC_MAP_FILE_WINDOWS
 		if(mlibc::sys_vm_map(nullptr, (size_t)info.st_size, PROT_READ, MAP_PRIVATE,
 				fd, 0, &_ptr))
 			mlibc::panicLogger() << "mlibc: Error mapping TZinfo" << frg::endlog;

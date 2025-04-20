@@ -1,1 +1,1 @@
-../../../../abis/linux/statvfs.h
+../../../../abis/vinix/statvfs.h

@@ -21,7 +21,26 @@ enum class buffer_mode {
 	line_buffer,
 	full_buffer
 };
+struct StdioLock {
+	bool uselock = true;
+	RecursiveFutexLock futexlock;
+	void lock() {
+		if (uselock) {
+			futexlock.lock();
+		}
 
+	}
+	void unlock() {
+		if (uselock) {
+			futexlock.unlock();
+		}
+	}
+	void try_lock() {
+		if (uselock) {
+			futexlock.try_lock();
+		}
+	}
+};
 struct abstract_file : __mlibc_file_base {
 public:
 	abstract_file(void (*do_dispose)(abstract_file *) = nullptr);
@@ -35,6 +54,7 @@ public:
 	void dispose();
 
 	virtual int close() = 0;
+	virtual int reopen(const char *path, const char *mode) = 0;
 
 	int read(char *buffer, size_t max_size, size_t *actual_size);
 	int write(const char *buffer, size_t max_size, size_t *actual_size);
@@ -55,6 +75,7 @@ protected:
 	virtual int io_write(const char *buffer, size_t max_size, size_t *actual_size) = 0;
 	virtual int io_seek(off_t offset, int whence, off_t *new_offset) = 0;
 
+	int _reset();
 private:
 	int _init_type();
 	int _init_bufmode();
@@ -62,7 +83,6 @@ private:
 	int _write_back();
 	int _save_pos();
 
-	int _reset();
 	void _ensure_allocation();
 
 	stream_type _type;
@@ -71,7 +91,7 @@ private:
 
 public:
 	// lock for file operations
-	RecursiveFutexLock _lock;
+	StdioLock _lock;
 	// All files are stored in a global linked list, so that they can be flushed at exit().
 	frg::default_list_hook<abstract_file> _list_hook;
 };
@@ -82,6 +102,7 @@ struct fd_file : abstract_file {
 	int fd();
 
 	int close() override;
+	int reopen(const char *path, const char *mode) override;
 
 	static int parse_modestring(const char *mode);
 

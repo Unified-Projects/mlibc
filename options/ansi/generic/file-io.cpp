@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
-#ifdef __MLIBC_GLIBC_OPTION
+#if __MLIBC_GLIBC_OPTION
 #include <stdio_ext.h>
 #endif
 
@@ -183,7 +183,6 @@ int abstract_file::write(const char *buffer, size_t max_size, size_t *actual_siz
 			__status_bits |= __MLIBC_ERROR_BIT;
 			return e;
 		}
-		__ensure(io_size > 0 && "io_write() is expected to always write at least one byte");
 		*actual_size = io_size;
 		return 0;
 	}
@@ -293,7 +292,9 @@ int abstract_file::tell(off_t *current_offset) {
 	if(int e = io_seek(0, SEEK_CUR, &seek_offset); e)
 		return e;
 
-	*current_offset = seek_offset + (off_t(__offset) - off_t(__io_offset));
+	*current_offset = seek_offset
+		+ (off_t(__offset) - off_t(__io_offset))
+		+ (off_t(__unget_ptr) - off_t(__buffer_ptr));
 	return 0;
 }
 
@@ -383,8 +384,10 @@ int abstract_file::_write_back() {
 int abstract_file::_save_pos() {
 	if (int e = _init_type(); e)
 		return e;
+	if (int e = _init_bufmode(); e)
+		return e;
 
-	if (_type == stream_type::file_like) {
+	if (_type == stream_type::file_like && _bufmode != buffer_mode::no_buffer) {
 		off_t new_offset;
 		auto seek_offset = (off_t(__offset) - off_t(__io_offset));
 		if (int e = io_seek(seek_offset, SEEK_CUR, &new_offset); e) {
@@ -441,6 +444,31 @@ int fd_file::close() {
 				<< frg::endlog;
 	if(int e = mlibc::sys_close(_fd); e)
 		return e;
+	return 0;
+}
+
+int fd_file::reopen(const char *path, const char *mode) {
+	int mode_flags = parse_modestring(mode);
+
+	int fd;
+	if(int e = sys_open(path, mode_flags, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH, &fd); e) {
+		return e;
+	}
+
+	flush();
+	close();
+	getAllocator().deallocate(__buffer_ptr, __buffer_size + ungetBufferSize);
+
+	__buffer_ptr = nullptr;
+	__unget_ptr = nullptr;
+	__buffer_size = 4096;
+	_reset();
+	_fd = fd;
+
+	if(mode_flags & O_APPEND) {
+		seek(0, SEEK_END);
+	}
+
 	return 0;
 }
 
@@ -509,41 +537,44 @@ int fd_file::parse_modestring(const char *mode) {
 	// Consume the first char; this must be 'r', 'w' or 'a'.
 	int flags = 0;
 	bool has_plus = strchr(mode, '+');
-	if(*mode == 'r') {
-		if(has_plus) {
+	if (*mode == 'r') {
+		if (has_plus) {
 			flags = O_RDWR;
-		}else{
+		} else {
 			flags = O_RDONLY;
 		}
-	}else if(*mode == 'w') {
-		if(has_plus) {
+	} else if (*mode == 'w') {
+		if (has_plus) {
 			flags = O_RDWR;
-		}else{
+		} else {
 			flags = O_WRONLY;
 		}
 		flags |= O_CREAT | O_TRUNC;
-	}else if(*mode == 'a') {
-		if(has_plus) {
+	} else if (*mode == 'a') {
+		if (has_plus) {
 			flags = O_APPEND | O_RDWR;
-		}else{
+		} else {
 			flags = O_APPEND | O_WRONLY;
 		}
 		flags |= O_CREAT;
-	}else{
+	} else {
 		mlibc::infoLogger() << "Illegal fopen() mode '" << *mode << "'" << frg::endlog;
 	}
 	mode += 1;
 
 	// Consume additional flags.
-	while(*mode) {
-		if(*mode == '+') {
+	while (*mode) {
+		if (*mode == '+') {
 			mode++; // This is already handled above.
-		}else if(*mode == 'b') {
+		} else if (*mode == 'b') {
 			mode++; // mlibc assumes that there is no distinction between text and binary.
-		}else if(*mode == 'e') {
+		} else if (*mode == 'e') {
 			flags |= O_CLOEXEC;
 			mode++;
-		}else{
+		} else if (*mode == 'x') {
+			flags |= O_EXCL;
+			mode++;
+		} else {
 			mlibc::infoLogger() << "Illegal fopen() flag '" << mode << "'" << frg::endlog;
 			mode++;
 		}
@@ -709,7 +740,7 @@ int ungetc(int c, FILE *file_base) {
 	return file->unget(c);
 }
 
-#ifdef __MLIBC_GLIBC_OPTION
+#if __MLIBC_GLIBC_OPTION
 void __fpurge(FILE *file_base) {
 	auto file = static_cast<mlibc::abstract_file *>(file_base);
 	frg::unique_lock lock(file->_lock);

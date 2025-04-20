@@ -1,11 +1,23 @@
+sysdep_supported_options = {
+	'posix': true,
+	'linux': false,
+	'glibc': true,
+	'bsd': true,
+}
 
-rtdl_sources += files(
+rtld_sources += files(
 	'generic/generic.cpp'
 )
 
 libc_sources += files(
 	'generic/entry.cpp',
-	'generic/generic.cpp'
+	'generic/generic.cpp',
+	'generic/mntent.cpp',
+	'generic/mount.cpp',
+	'generic/reboot.cpp',
+	'generic/thread.cpp',
+	'generic/thread.S',
+	'generic/utmpx.c',
 )
 
 if not no_headers
@@ -36,21 +48,47 @@ if not no_headers
 		'include/abi-bits/wait.h',
 		'include/abi-bits/limits.h',
 		'include/abi-bits/utsname.h',
-		'include/abi-bits/ptrace.h',
 		'include/abi-bits/poll.h',
-		'include/abi-bits/epoll.h',
 		'include/abi-bits/packet.h',
-		'include/abi-bits/inotify.h',
 		'include/abi-bits/clockid_t.h',
+		'include/abi-bits/ipc.h',
 		'include/abi-bits/shm.h',
 		'include/abi-bits/mqueue.h',
 		'include/abi-bits/suseconds_t.h',
 		'include/abi-bits/fsfilcnt_t.h',
 		'include/abi-bits/fsblkcnt_t.h',
 		'include/abi-bits/socklen_t.h',
-		'include/abi-bits/statfs.h',
 		'include/abi-bits/statvfs.h',
-		subdir: 'abi-bits'
+		'include/abi-bits/ioctls.h',
+		'include/abi-bits/msg.h',
+		'include/abi-bits/rlim_t.h',
+		'include/abi-bits/sigval.h',
+		'include/abi-bits/sigevent.h',
+		subdir: 'abi-bits',
+		follow_symlinks: true
+	)
+
+	install_headers(
+		'include/asm/ioctl.h',
+		'include/asm/ioctls.h',
+		subdir: 'asm',
+	)
+
+	install_headers(
+		'include/linux/fb.h',
+		subdir: 'linux',
+	)
+
+	install_headers(
+		'include/sys/reboot.h',
+		'include/sys/mount.h',
+		'include/sys/sysmacros.h',
+		subdir: 'sys',
+	)
+
+	install_headers(
+		'include/mntent.h',
+		'include/utmpx.h',
 	)
 endif
 
@@ -58,8 +96,26 @@ if not headers_only
 	crt = custom_target('crt0',
 		build_by_default: true,
 		command: c_compiler.cmd_array() + ['-c', '-o', '@OUTPUT@', '@INPUT@'],
-		input: 'crt-x86_64/crt0.S',
+		input: host_machine.cpu_family() / 'crt-src/crt0.S',
 		output: 'crt0.o',
+		install: true,
+		install_dir: get_option('libdir')
+	)
+
+	custom_target('crti',
+		build_by_default: true,
+		command: c_compiler.cmd_array() + ['-c', '-o', '@OUTPUT@', '@INPUT@'],
+		input: host_machine.cpu_family() / 'crt-src/crti.S',
+		output: 'crti.o',
+		install: true,
+		install_dir: get_option('libdir')
+	)
+
+	custom_target('crtn',
+		build_by_default: true,
+		command: c_compiler.cmd_array() + ['-c', '-o', '@OUTPUT@', '@INPUT@'],
+		input: host_machine.cpu_family() / 'crt-src/crtn.S',
+		output: 'crtn.o',
 		install: true,
 		install_dir: get_option('libdir')
 	)

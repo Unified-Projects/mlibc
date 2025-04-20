@@ -7,10 +7,10 @@
 
 #include <elf.h>
 
-#ifdef __MLIBC_LINUX_OPTION
+#if __MLIBC_LINUX_OPTION
 #include <sys/sysmacros.h>
-#endif
+#endif /* __MLIBC_LINUX_OPTION */
 
-#ifndef MLIBC_BUILDING_RTDL
+#ifndef MLIBC_BUILDING_RTLD
 #include <math.h>
 #endif
