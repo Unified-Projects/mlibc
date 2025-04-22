@@ -112,9 +112,15 @@ int sigwait(const sigset_t *__restrict set, int *__restrict sig) {
 	}
 }
 
-int sigpending(sigset_t *) {
-	__ensure(!"sigpending() not implemented");
-	__builtin_unreachable();
+int sigpending(sigset_t *set) {
+	auto sysdep = MLIBC_CHECK_OR_ENOSYS(mlibc::sys_sigpending, -1);
+
+	if(int e = sysdep(set)) {
+		errno = e;
+		return -1;
+	}
+
+	return 0;
 }
 
 int sigaltstack(const stack_t *__restrict ss, stack_t *__restrict oss) {
@@ -134,7 +140,13 @@ int sigaltstack(const stack_t *__restrict ss, stack_t *__restrict oss) {
 
 #if __MLIBC_GLIBC_OPTION
 int sigisemptyset(const sigset_t *set) {
-	return !(*set);
+	auto ptr = reinterpret_cast<const char *>(set);
+	for(size_t i = 0; i < sizeof(sigset_t); i++) {
+		if(ptr[i]) {
+			return 0;
+		}
+	}
+	return 1;
 }
 #endif // __MLIBC_GLIBC_OPTION
 

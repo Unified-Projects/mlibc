@@ -39,6 +39,16 @@ int sys_read(int fd, void *buf, size_t count, ssize_t *bytes_read) {
     return 0;
 }
 
+int sys_fsync(int) {
+    mlibc::infoLogger() << "\e[35mmlibc: fsync is a stub\e[39m" << frg::endlog;
+    return 0;
+}
+
+int sys_fdatasync(int) {
+    mlibc::infoLogger() << "\e[35mmlibc: fdatasync() is a no-op\e[39m" << frg::endlog;
+    return 0;
+}
+
 // clang-format off
 int sys_pwrite(int fd, const void *buffer, size_t count, off_t off,
                ssize_t *written) UNIMPLEMENTED("sys_pwrite") 
@@ -79,44 +89,38 @@ int sys_close(int fd) {
     return 0;
 }
 
-int sys_access(const char *filename, int mode) {
-    auto result =
-        syscall(SYS_ACCESS, AT_FDCWD, filename, strlen(filename), mode, 0);
-
-    if (result < 0) {
-        return -result;
-    }
-
+int sys_faccessat(int dirfd, const char *pathname, int mode, int flags) {
+    auto ret = syscall(SYS_ACCESS, dirfd, pathname, strlen(pathname), mode, flags);
+    if(int e = sc_error(ret); e)
+        return e;
     return 0;
+}
+
+int sys_access(const char *filename, int mode) {
+    return sys_faccessat(AT_FDCWD, filename, mode, 0);
 }
 
 int sys_stat(fsfd_target fsfdt, int fd, const char *path, int flags,
              struct stat *statbuf) {
-    auto result = 0;
-
     switch (fsfdt) {
-    case fsfd_target::path: {
-        result = syscall(SYS_STAT, path, strlen(path), statbuf);
+    case fsfd_target::path:
+        fd = AT_FDCWD;
         break;
-    }
 
-    case fsfd_target::fd: {
-        result = syscall(SYS_FSTAT, fd, statbuf);
+    case fsfd_target::fd:
+        flags |= AT_EMPTY_PATH;
+    
+    case fsfd_target::fd_path:
         break;
+
+    default:
+        __ensure(!"Invalid fsfd_target");
+        __builtin_unreachable();
     }
 
-    default: {
-        mlibc::infoLogger()
-            << "mlibc warning: sys_stat: unsupported fsfd target"
-            << frg::endlog;
-        return EINVAL;
-    }
-    }
-
-    if (result < 0) {
-        return -result;
-    }
-
+    auto ret = syscall(SYS_FSTAT, fd, path, strlen(path), flags, statbuf);
+    if(int e = sc_error(ret); e)
+        return e;
     return 0;
 }
 
@@ -155,14 +159,16 @@ int sys_tcgetattr(int fd, struct termios *attr) {
 }
 
 int sys_tcsetattr(int fd, int optional_action, const struct termios *attr) {
-    if (optional_action)
-        mlibc::infoLogger()
-            << "mlibc: warning: sys_tcsetattr ignores optional_action"
-            << frg::endlog;
+    int req;
 
-    int result;
+    switch (optional_action) {
+		case TCSANOW: req = TCSETS; break;
+		case TCSADRAIN: req = TCSETSW; break;
+		case TCSAFLUSH: req = TCSETSF; break;
+		default: return EINVAL;
+	}
 
-    if (int e = sys_ioctl(fd, TCSETSF, (void *)attr, &result); e)
+    if (int e = sys_ioctl(fd, req, (void *)attr, NULL); e)
         return e;
 
     return 0;
@@ -178,9 +184,7 @@ int sys_mkdir(const char *path, mode_t) {
     return 0;
 }
 
-int sys_rmdir(const char *path) UNIMPLEMENTED("sys_rmdir")
-
-    int sys_link(const char *srcpath, const char *destpath) {
+int sys_link(const char *srcpath, const char *destpath) {
     auto result =
         syscall(SYS_LINK, srcpath, strlen(srcpath), destpath, strlen(destpath));
 
@@ -191,13 +195,25 @@ int sys_rmdir(const char *path) UNIMPLEMENTED("sys_rmdir")
     return 0;
 }
 
+int sys_rmdir(const char *path) {
+    return sys_unlinkat(AT_FDCWD, path, AT_REMOVEDIR);
+}
+
 int sys_unlinkat(int fd, const char *path, int flags) {
-    auto result = syscall(SYS_UNLINK, fd, path, strlen(path), flags);
+    auto ret = syscall(SYS_UNLINK, fd, path, strlen(path), flags);
+    if (int e = sc_error(ret); e)
+        return e;
+    return 0;
+}
 
-    if (result < 0) {
-        return -result;
-    }
+int sys_symlink(const char *target_path, const char *link_path) {
+    return sys_symlinkat(target_path, AT_FDCWD, link_path);
+}
 
+int sys_symlinkat(const char *target_path, int dirfd, const char *link_path) {
+    auto ret = syscall(SYS_SYMLINK_AT, dirfd, target_path, strlen(target_path), link_path, strlen(link_path));
+    if (int e = sc_error(ret); e)
+        return e;
     return 0;
 }
 
@@ -381,7 +397,7 @@ int sys_poll(struct pollfd *fds, nfds_t count, int timeout, int *num_events) {
     return sys_ppoll(fds, count, &ts, NULL, num_events);
 }
 
-#ifndef MLIBC_BUILDING_RTDL
+#ifndef MLIBC_BUILDING_RTLD
 #include <stdio.h>
 int sys_ptsname(int fd, char *buffer, size_t length) {
     int index;
@@ -474,5 +490,5 @@ int sys_pselect(int num_fds, fd_set *read_set, fd_set *write_set,
     *num_events = m;
     return 0;
 }
-#endif // #ifndef MLIBC_BUILDING_RTDL
+#endif // #ifndef MLIBC_BUILDING_RTLD
 } // namespace mlibc

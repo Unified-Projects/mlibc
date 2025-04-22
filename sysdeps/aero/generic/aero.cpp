@@ -150,7 +150,7 @@ void sys_exit(int status) {
     __builtin_unreachable();
 }
 
-#ifndef MLIBC_BUILDING_RTDL
+#ifndef MLIBC_BUILDING_RTLD
 
 pid_t sys_getpid() {
     auto result = syscall(SYS_GETPID);
@@ -172,13 +172,6 @@ int sys_kill(int pid, int sig) {
     if (result < 0) {
         return -result;
     }
-
-    return 0;
-}
-
-int sys_getpgid(pid_t pid, pid_t *pgid) {
-    mlibc::infoLogger() << "sys_getpgid() is unimplemented" << frg::endlog;
-    *pgid = 0;
 
     return 0;
 }
@@ -239,6 +232,21 @@ int sys_sleep(time_t *sec, long *nanosec) {
     return 0;
 }
 
+pid_t sys_getpgid(pid_t pid, pid_t *pgid) {
+    auto ret = syscall(SYS_GETPGID, pid);
+    if(int e = sc_error(ret); e)
+        return e;
+    *pgid = ret;
+    return 0;
+}
+
+int sys_setpgid(pid_t pid, pid_t pgid) {
+    auto ret = syscall(SYS_SETPGID, pid, pgid);
+    if(int e = sc_error(ret); e)
+		return e;
+	return 0;
+}
+
 uid_t sys_getuid() {
     mlibc::infoLogger() << "mlibc: sys_setuid is a stub" << frg::endlog;
     return 0;
@@ -250,7 +258,10 @@ uid_t sys_geteuid() {
 }
 
 int sys_setsid(pid_t *sid) {
-    mlibc::infoLogger() << "mlibc: sys_setsid is a stub" << frg::endlog;
+    auto ret = syscall(SYS_SETSID);
+    if(int e = sc_error(ret); e)
+        return e;
+    *sid = ret;
     return 0;
 }
 
@@ -292,10 +303,18 @@ int sys_clone(void *tcb, pid_t *tid_out, void *stack) {
     return 0;
 }
 
-void sys_thread_exit() UNIMPLEMENTED("sys_thread_exit")
+int sys_thread_setname(void *tcb, const char *name) {
+    mlibc::infoLogger() << "The name of this thread is " << name << frg::endlog;
+    return 0;
+}
 
-    int sys_waitpid(pid_t pid, int *status, int flags, struct rusage *ru,
-                    pid_t *ret_pid) {
+void sys_thread_exit() {
+    syscall(SYS_EXIT);
+    __builtin_trap();
+}
+
+int sys_waitpid(pid_t pid, int *status, int flags, struct rusage *ru,
+                pid_t *ret_pid) {
     if (ru) {
         mlibc::infoLogger()
             << "mlibc: struct rusage in sys_waitpid is unsupported"

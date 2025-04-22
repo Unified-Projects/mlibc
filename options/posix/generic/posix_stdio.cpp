@@ -32,9 +32,11 @@ private:
 	pid_t _popen_pid;
 };
 
-FILE *fmemopen(void *__restrict, size_t, const char *__restrict) {
-	__ensure(!"Not implemented");
-	__builtin_unreachable();
+FILE *fmemopen(void *buf, size_t size, const char *__restrict mode) {
+	int flags = mlibc::fd_file::parse_modestring(mode);
+
+	return frg::construct<mlibc::fmemopen_mem_file>(getAllocator(), buf, size, flags,
+		mlibc::file_dispose_cb<mlibc::fmemopen_mem_file>);
 }
 
 int pclose(FILE *stream) {
@@ -156,8 +158,8 @@ FILE *popen(const char *command, const char *typestr) {
 }
 
 FILE *open_memstream(char **buf, size_t *sizeloc) {
-	return frg::construct<mlibc::mem_file>(getAllocator(), buf, sizeloc,
-			mlibc::file_dispose_cb<mlibc::mem_file>);
+	return frg::construct<mlibc::memstream_mem_file>(getAllocator(), buf, sizeloc, O_RDWR,
+			mlibc::file_dispose_cb<mlibc::memstream_mem_file>);
 }
 
 int fseeko(FILE *file_base, off_t offset, int whence) {
@@ -169,6 +171,8 @@ int fseeko(FILE *file_base, off_t offset, int whence) {
 	return 0;
 }
 
+[[gnu::alias("fseeko")]] int fseeko64(FILE *file_base, off64_t offset, int whence);
+
 off_t ftello(FILE *file_base) {
 	auto file = static_cast<mlibc::abstract_file *>(file_base);
 	off_t current_offset;
@@ -178,6 +182,8 @@ off_t ftello(FILE *file_base) {
 	}
 	return current_offset;
 }
+
+[[gnu::alias("ftello")]] off64_t ftello64(FILE *file_base);
 
 int dprintf(int fd, const char *format, ...) {
 	va_list args;
@@ -195,6 +201,11 @@ int vdprintf(int fd, const char *format, __builtin_va_list args) {
 }
 
 char *fgetln(FILE *, size_t *) {
+	__ensure(!"Not implemented");
+	__builtin_unreachable();
+}
+
+char *tempnam(const char *, const char *) {
 	__ensure(!"Not implemented");
 	__builtin_unreachable();
 }

@@ -1,5 +1,5 @@
 
-rtdl_sources += files(
+rtld_sources += files(
 	'generic/filesystem.cpp',
 	'generic/lemon.cpp',
 )
@@ -26,6 +26,7 @@ if not no_headers
 		'include/abi-bits/resource.h',
 		'include/abi-bits/signal.h',
 		'include/abi-bits/stat.h',
+		'include/abi-bits/statx.h',
 		'include/abi-bits/socket.h',
 		'include/abi-bits/termios.h',
 		'include/abi-bits/time.h',
@@ -58,7 +59,9 @@ if not no_headers
 		'include/abi-bits/statvfs.h',
 		'include/abi-bits/ioctls.h',
 		'include/abi-bits/xattr.h',
-		subdir: 'abi-bits'
+		'include/abi-bits/msg.h',
+		subdir: 'abi-bits',
+		follow_symlinks: true
 	)
 	install_headers(
 		'include/lemon/syscall.h',

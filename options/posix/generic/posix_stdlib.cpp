@@ -15,7 +15,7 @@
 #include <mlibc/allocator.hpp>
 #include <mlibc/debug.hpp>
 #include <mlibc/posix-sysdeps.hpp>
-#include <mlibc/rtdl-config.hpp>
+#include <mlibc/rtld-config.hpp>
 
 namespace {
 	constexpr bool debugPathResolution = false;
@@ -75,12 +75,48 @@ long random(void) {
 	return k;
 }
 
-double drand48(void) {
-	__ensure(!"Not implemented");
-	__builtin_unreachable();
+// erand, drand and srand are borrowed from musl
+namespace {
+
+unsigned short seed_48[7] = { 0, 0, 0, 0xe66d, 0xdeec, 0x5, 0xb };
+
+uint64_t eand48_step(unsigned short *xi, unsigned short *lc) {
+	uint64_t x = xi[0] | (xi[1] + 0U) << 16 | (xi[2] + 0ULL) << 32;
+	uint64_t a = lc[0] | (lc[1] + 0U) << 16 | (lc[2] + 0ULL) << 32;
+	x = a*x + lc[3];
+	xi[0] = x;
+	xi[1] = x>>16;
+	xi[2] = x>>32;
+	return x & 0xffffffffffffull;
 }
 
-void srand48(long int) {
+} // namespace
+
+double erand48(unsigned short s[3]) {
+	union {
+		uint64_t u;
+		double f;
+	} x = { 0x3ff0000000000000ULL | eand48_step(s, seed_48+3)<<4 };
+	return x.f - 1.0;
+}
+
+double drand48(void) {
+	return erand48(seed_48);
+}
+
+unsigned short *seed48(unsigned short *s) {
+	static unsigned short p[3];
+	memcpy(p, seed_48, sizeof p);
+	memcpy(seed_48, s, sizeof p);
+	return p;
+}
+
+void srand48(long int seed) {
+	unsigned short arr[3] = { 0x330e, (unsigned short) seed, (unsigned short) (seed>>16) };
+	seed48(arr);
+}
+
+long jrand48(unsigned short [3]) {
 	__ensure(!"Not implemented");
 	__builtin_unreachable();
 }
@@ -138,16 +174,18 @@ char *setstate(char *state) {
 // Path handling.
 // ----------------------------------------------------------------------------
 
-int mkostemp(char *pattern, int flags) {
-	flags &= ~O_WRONLY;
+
+int mkostemps(char *pattern, int suffixlen, int flags) {
 	auto n = strlen(pattern);
-	__ensure(n >= 6);
-	if(n < 6) {
+	if(n < (6 + static_cast<size_t>(suffixlen))) {
 		errno = EINVAL;
 		return -1;
 	}
+
+	flags &= ~O_WRONLY;
+
 	for(size_t i = 0; i < 6; i++) {
-		if(pattern[n - 6 + i] == 'X')
+		if(pattern[n - (6 + suffixlen) + i] == 'X')
 			continue;
 		errno = EINVAL;
 		return -1;
@@ -155,9 +193,9 @@ int mkostemp(char *pattern, int flags) {
 
 	// TODO: Do an exponential search.
 	for(size_t i = 0; i < 999999; i++) {
-		__ensure(sprintf(pattern + (n - 6), "%06zu", i) == 6);
-//		mlibc::infoLogger() << "mlibc: mkstemp candidate is "
-//				<< (const char *)pattern << frg::endlog;
+		char sfx = pattern[n - suffixlen];
+		__ensure(sprintf(pattern + (n - (6 + suffixlen)), "%06zu", i) == 6);
+		pattern[n - suffixlen] = sfx;
 
 		int fd;
 		if(int e = mlibc::sys_open(pattern, O_RDWR | O_CREAT | O_EXCL | flags, S_IRUSR | S_IWUSR, &fd); !e) {
@@ -172,14 +210,16 @@ int mkostemp(char *pattern, int flags) {
 	return -1;
 }
 
+int mkostemp(char *pattern, int flags) {
+	return mkostemps(pattern, flags, 0);
+}
+
 int mkstemp(char *path) {
 	return mkostemp(path, 0);
 }
 
-int mkostemps(char *pattern, int suffixlen, int flags) {
-	(void)suffixlen;
-	mlibc::infoLogger() << "mlibc: mkostemps ignores suffixlen!" << frg::endlog;
-	return mkostemp(pattern, flags);
+int mkstemps(char *pattern, int suffixlen) {
+	return mkostemps(pattern, suffixlen, 0);
 }
 
 char *mkdtemp(char *pattern) {
@@ -320,9 +360,14 @@ char *realpath(const char *path, char *out) {
 
 			if (path[0] == '/') {
 				// Absolute path, replace resolv
-				resolv.resize(sz);
-				strncpy(resolv.data(), path, sz - 1);
-				resolv.data()[sz - 1] = 0;
+
+				// Ignore any trailing '/' so all results will not have one to keep consistency.
+				while(sz > 1 && path[sz - 1] == '/')
+					sz -= 1;
+
+				resolv.resize(sz + 1);
+				strncpy(resolv.data(), path, sz);
+				resolv.data()[sz] = 0;
 
 				if(debugPathResolution) {
 					mlibc::infoLogger() << "mlibc realpath(): Symlink is absolute, resolv: '"
@@ -488,8 +533,13 @@ int getloadavg(double *, int) {
 	__builtin_unreachable();
 }
 
+int getsubopt(char **__restrict__, char *const *__restrict__, char **__restrict__) {
+	__ensure(!"Not implemented");
+	__builtin_unreachable();
+}
+
 char *secure_getenv(const char *name) {
-	if (mlibc::rtdlConfig().secureRequired)
+	if (mlibc::rtldConfig().secureRequired)
 		return NULL;
 	else
 		return getenv(name);

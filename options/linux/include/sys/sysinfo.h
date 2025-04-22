@@ -18,12 +18,12 @@ struct sysinfo {
 	unsigned long totalhigh;
 	unsigned long freehigh;
 	unsigned int mem_unit;
-	char _f[20 - 2 * sizeof(long) - sizeof(int)]; // Padding to 64 bytes according to my man page
+	char _f[20 - 2 * sizeof(long) - sizeof(int)]; /* Padding to 64 bytes according to my man page */
 };
 
 #ifndef __MLIBC_ABI_ONLY
 
-int sysinfo(struct sysinfo *);
+int sysinfo(struct sysinfo *__info);
 
 #endif /* !__MLIBC_ABI_ONLY */
 
@@ -31,4 +31,4 @@ int sysinfo(struct sysinfo *);
 }
 #endif
 
-#endif // _SYS_SYSINFO_H
+#endif /* _SYS_SYSINFO_H */

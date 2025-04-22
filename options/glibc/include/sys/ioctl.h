@@ -4,10 +4,11 @@
 #include <mlibc-config.h>
 #include <abi-bits/ioctls.h>
 
-// On Linux, sys/ioctl.h includes the termios ioctls.
+/* On Linux, sys/ioctl.h includes the termios ioctls. */
 #if __MLIBC_LINUX_OPTION
 #	include <asm/ioctls.h>
 #	include <bits/winsize.h>
+#   include <sys/ttydefaults.h>
 #endif
 
 #ifdef __cplusplus
@@ -16,7 +17,7 @@ extern "C" {
 
 #ifndef __MLIBC_ABI_ONLY
 
-int ioctl(int fd, unsigned long request, ...);
+int ioctl(int __fd, unsigned long __request, ...);
 
 #endif /* !__MLIBC_ABI_ONLY */
 
@@ -40,4 +41,4 @@ int ioctl(int fd, unsigned long request, ...);
 }
 #endif
 
-#endif // _SYS_IOCTL_H
+#endif /* _SYS_IOCTL_H */

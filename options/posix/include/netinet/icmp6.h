@@ -7,6 +7,11 @@ extern "C" {
 
 #include <stdint.h>
 #include <abi-bits/in.h>
+#include <mlibc-config.h>
+
+#if __MLIBC_GLIBC_OPTION
+#include <bits/glibc/glibc_icmp6.h>
+#endif /* __MLIBC_GLIBC_OPTION */
 
 #define ICMP6_FILTER 1
 
@@ -14,6 +19,8 @@ extern "C" {
 #define ICMP6_FILTER_PASS 2
 #define ICMP6_FILTER_BLOCKOTHERS 3
 #define ICMP6_FILTER_PASSONLY 4
+#define ICMP6_ECHO_REQUEST 128
+#define ICMP6_ECHO_REPLY 129
 
 struct icmp6_filter {
 	uint32_t icmp6_filt[8];
@@ -33,6 +40,12 @@ struct icmp6_hdr {
 #define icmp6_data32 icmp6_dataun.icmp6_un_data32
 #define icmp6_data16 icmp6_dataun.icmp6_un_data16
 #define icmp6_data8 icmp6_dataun.icmp6_un_data8
+
+#define icmp6_pptr icmp6_data32[0]
+#define icmp6_mtu icmp6_data32[0]
+#define icmp6_id icmp6_data16[0]
+#define icmp6_seq icmp6_data16[1]
+#define icmp6_maxdelay icmp6_data16[0]
 
 #define ICMP6_FILTER_WILLPASS(type, filterp) \
 	((((filterp)->icmp6_filt[(type) >> 5]) & (1U << ((type) & 31))) == 0)
@@ -119,9 +132,33 @@ struct nd_opt_mtu {
 	uint32_t nd_opt_mtu_mtu;
 };
 
+struct nd_neighbor_solicit {
+	struct icmp6_hdr nd_ns_hdr;
+	struct in6_addr nd_ns_target;
+};
+
+struct nd_neighbor_advert {
+	struct icmp6_hdr nd_na_hdr;
+	struct in6_addr nd_na_target;
+};
+#define nd_na_type nd_na_hdr.icmp6_type
+#define nd_na_code nd_na_hdr.icmp6_code
+#define nd_na_cksum nd_na_hdr.icmp6_cksum
+#define nd_na_flags_reserved nd_na_hdr.icmp6_data32[0]
+
+struct nd_redirect {
+	struct icmp6_hdr nd_rd_hdr;
+	struct in6_addr nd_rd_target;
+	struct in6_addr nd_rd_dst;
+};
+
+#define ND_NA_FLAG_OVERRIDE 0x00000020
+#define ND_NA_FLAG_SOLICITED 0x00000040
+#define ND_NA_FLAG_ROUTER 0x00000080
+
 #ifdef __cplusplus
 }
 #endif
 
-#endif // _NETINET_ICMP6_H
+#endif /* _NETINET_ICMP6_H */
 

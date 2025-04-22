@@ -14,7 +14,7 @@ struct utimbuf {
 
 #ifndef __MLIBC_ABI_ONLY
 
-int utime(const char *, const struct utimbuf *);
+int utime(const char *__filename, const struct utimbuf *__times);
 
 #endif /* !__MLIBC_ABI_ONLY */
 
@@ -22,4 +22,4 @@ int utime(const char *, const struct utimbuf *);
 }
 #endif
 
-#endif // _UTIME_H
+#endif /* _UTIME_H */

@@ -90,6 +90,8 @@ static void *stackaddr_worker(void *arg) {
 	void *sp;
 #if defined(__x86_64__)
 	asm volatile ("mov %%rsp, %0" : "=r"(sp));
+#elif defined(__i386__)
+	asm volatile ("mov %%esp, %0" : "=r"(sp));
 #elif defined(__aarch64__)
 	asm volatile ("mov %0, sp" : "=r"(sp));
 #elif defined (__riscv)
@@ -99,7 +101,7 @@ static void *stackaddr_worker(void *arg) {
 #endif
 
 	// Check if our stack pointer is in a sane range.
-	assert(addr >= sp);
+	assert(sp > addr);
 	return NULL;
 }
 #pragma GCC diagnostic push
@@ -110,12 +112,14 @@ static void test_stackaddr() {
 	size_t size;
 	assert(!pthread_attr_getstacksize(&attr, &size));
 	void *addr = mmap(NULL, size, PROT_READ | PROT_WRITE,
-				MAP_PRIVATE | MAP_ANONYMOUS, -1, 0) + size;
-	assert(!pthread_attr_setstackaddr(&attr, addr));
+				MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	assert(!pthread_attr_setstack(&attr, addr, size));
 	assert(!pthread_attr_setguardsize(&attr, 0));
 	void *new_addr;
-	assert(!pthread_attr_getstackaddr(&attr, &new_addr));
+	size_t new_size;
+	assert(!pthread_attr_getstack(&attr, &new_addr, &new_size));
 	assert(new_addr == addr);
+	assert(new_size == size);
 
 	pthread_t thread;
 	assert(!pthread_create(&thread, &attr, stackaddr_worker, &addr));
@@ -150,4 +154,6 @@ int main() {
 #if !defined(USE_HOST_LIBC) || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 32)
 	test_stack();
 #endif
+
+	return 0;
 }

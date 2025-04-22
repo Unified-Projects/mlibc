@@ -20,9 +20,10 @@
 #include <sys/resource.h>
 #include <sys/utsname.h>
 #include <sys/select.h>
+#include <sys/sem.h>
 #include <sys/statvfs.h>
-#include <sys/statfs.h>
 #include <sys/time.h>
+#include <sys/times.h>
 #include <sys/wait.h>
 #include <sched.h>
 #include <termios.h>
@@ -67,6 +68,7 @@ int sys_close(int fd);
 [[gnu::weak]] int sys_statvfs(const char *path, struct statvfs *out);
 [[gnu::weak]] int sys_fstatvfs(int fd, struct statvfs *out);
 [[gnu::weak]] int sys_readlink(const char *path, void *buffer, size_t max_size, ssize_t *length);
+[[gnu::weak]] int sys_readlinkat(int dirfd, const char *path, void *buffer, size_t max_size, ssize_t *length);
 [[gnu::weak]] int sys_rmdir(const char *path);
 [[gnu::weak]] int sys_ftruncate(int fd, size_t size);
 [[gnu::weak]] int sys_fallocate(int fd, off_t offset, size_t size);
@@ -92,7 +94,7 @@ int sys_close(int fd);
 [[gnu::weak]] int sys_seteuid(uid_t euid);
 [[gnu::weak]] int sys_setgid(gid_t gid);
 [[gnu::weak]] int sys_setegid(gid_t egid);
-[[gnu::weak]] int sys_getgroups(size_t size, const gid_t *list, int *ret);
+[[gnu::weak]] int sys_getgroups(size_t size, gid_t *list, int *ret);
 [[gnu::weak]] void sys_yield();
 [[gnu::weak]] int sys_sleep(time_t *secs, long *nanos);
 [[gnu::weak]] int sys_fork(pid_t *child);
@@ -159,6 +161,7 @@ int sys_vm_unmap(void *pointer, size_t size);
 		void *__restrict buffer, socklen_t *__restrict size);
 [[gnu::weak]] int sys_setsockopt(int fd, int layer, int number,
 		const void *buffer, socklen_t size);
+[[gnu::weak]] int sys_shutdown(int sockfd, int how);
 [[gnu::weak]] int sys_sigprocmask(int how, const sigset_t *__restrict set,
 		sigset_t *__restrict retrieve);
 [[gnu::weak]] int sys_sigaction(int, const struct sigaction *__restrict,
@@ -176,7 +179,7 @@ int sys_vm_unmap(void *pointer, size_t size);
 	socklen_t *actual_length);
 [[gnu::weak]] int sys_gethostname(char *buffer, size_t bufsize);
 [[gnu::weak]] int sys_sethostname(const char *buffer, size_t bufsize);
-[[gnu::weak]] int sys_mkfifoat(int dirfd, const char *path, int mode);
+[[gnu::weak]] int sys_mkfifoat(int dirfd, const char *path, mode_t mode);
 [[gnu::weak]] int sys_getentropy(void *buffer, size_t length);
 [[gnu::weak]] int sys_mknodat(int dirfd, const char *path, int mode, int dev);
 [[gnu::weak]] int sys_umask(mode_t mode, mode_t *old);
@@ -187,9 +190,8 @@ int sys_vm_unmap(void *pointer, size_t size);
 [[gnu::weak]] int sys_fchownat(int dirfd, const char *pathname, uid_t owner, gid_t group, int flags);
 [[gnu::weak]] int sys_sigaltstack(const stack_t *ss, stack_t *oss);
 [[gnu::weak]] int sys_sigsuspend(const sigset_t *set);
+[[gnu::weak]] int sys_sigpending(sigset_t *set);
 [[gnu::weak]] int sys_setgroups(size_t size, const gid_t *list);
-[[gnu::weak]] int sys_statfs(const char *path, struct statfs *buf);
-[[gnu::weak]] int sys_fstatfs(int fd, struct statfs *buf);
 [[gnu::weak]] int sys_memfd_create(const char *name, int flags, int *fd);
 [[gnu::weak]] int sys_madvise(void *addr, size_t length, int advice);
 [[gnu::weak]] int sys_msync(void *addr, size_t length, int flags);
@@ -222,6 +224,17 @@ int sys_vm_unmap(void *pointer, size_t size);
 [[gnu::weak]] int sys_thread_getname(void *tcb, char *name, size_t size);
 
 [[gnu::weak]] int sys_sysconf(int num, long *ret);
+
+[[gnu::weak]] int sys_semget(key_t key, int n, int fl, int *id);
+[[gnu::weak]] int sys_semctl(int semid, int semnum, int cmd, void *semun, int *ret);
+
+[[gnu::weak]] int sys_getaffinity(pid_t pid, size_t cpusetsize, cpu_set_t *mask);
+[[gnu::weak]] int sys_getthreadaffinity(pid_t tid, size_t cpusetsize, cpu_set_t *mask);
+
+[[gnu::weak]] int sys_setaffinity(pid_t pid, size_t cpusetsize, const cpu_set_t *mask);
+[[gnu::weak]] int sys_setthreadaffinity(pid_t tid, size_t cpusetsize, const cpu_set_t *mask);
+
+[[gnu::weak]] int sys_waitid(idtype_t idtype, id_t id, siginfo_t *info, int options);
 
 } //namespace mlibc
 

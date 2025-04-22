@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <sys/eventfd.h>
 #include <sys/inotify.h>
+#include <sys/reboot.h>
 #include <sys/signalfd.h>
 #include <unistd.h>
 
@@ -179,6 +180,8 @@ int sys_symlinkat(const char *target_path, int dirfd, const char *link_path) {
 		return EBADF;
 	}else if(resp.error() == managarm::posix::Errors::NOT_A_DIRECTORY) {
 		return ENOTDIR;
+	}else if(resp.error() == managarm::posix::Errors::ALREADY_EXISTS) {
+		return EEXIST;
 	}else{
 		__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
 		return 0;
@@ -397,8 +400,10 @@ int sys_fcntl(int fd, int request, va_list args, int *result) {
 		mlibc::infoLogger() << "\e[31mmlibc: F_SETLKW\e[39m" << frg::endlog;
 		return 0;
 	}else if(request == F_GETLK) {
-		mlibc::infoLogger() << "\e[31mmlibc: F_GETLK\e[39m" << frg::endlog;
-		return ENOSYS;
+		struct flock *lock = va_arg(args, struct flock *);
+		lock->l_type = F_UNLCK;
+		mlibc::infoLogger() << "\e[31mmlibc: F_GETLK is stubbed!\e[39m" << frg::endlog;
+		return 0;
 	}else if(request == F_ADD_SEALS) {
 		auto seals = va_arg(args, int);
 		auto handle = getHandleForFd(fd);
@@ -527,7 +532,7 @@ int sys_ttyname(int fd, char *buf, size_t size) {
 
 	managarm::posix::SvrResponse<MemoryAllocator> resp(getSysdepsAllocator());
 	resp.ParseFromArray(recv_resp.data(), recv_resp.length());
-	if(resp.error() ==  managarm::posix::Errors::BAD_FD) {
+	if(resp.error() ==  managarm::posix::Errors::NO_SUCH_FD) {
 		return EBADF;
 	}else if(resp.error() == managarm::posix::Errors::NOT_A_TTY) {
 		return ENOTTY;
@@ -599,8 +604,17 @@ int sys_vm_map(void *hint, size_t size, int prot, int flags, int fd, off_t offse
 
 	managarm::posix::SvrResponse<MemoryAllocator> resp(getSysdepsAllocator());
 	resp.ParseFromArray(recvResp.data(), recvResp.length());
-	__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
-	*window = reinterpret_cast<void *>(resp.offset());
+	if(resp.error() == managarm::posix::Errors::ALREADY_EXISTS) {
+		return EEXIST;
+	}else if(resp.error() == managarm::posix::Errors::NO_MEMORY) {
+		return EFAULT;
+	}else if(resp.error() == managarm::posix::Errors::ILLEGAL_ARGUMENTS) {
+		return EINVAL;
+	}else {
+		__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
+		*window = reinterpret_cast<void *>(resp.offset());
+	}
+
 	return 0;
 }
 
@@ -718,11 +732,10 @@ int sys_tcgetattr(int fd, struct termios *attr) {
 }
 
 int sys_tcsetattr(int fd, int when, const struct termios *attr) {
-	if(when != TCSANOW)
-		mlibc::infoLogger() << "\e[35mmlibc: tcsetattr() when argument ignored\e[39m"
-				<< frg::endlog;
-	int result;
-	if(int e = sys_ioctl(fd, TCSETS, const_cast<struct termios *>(attr), &result); e)
+	if(when < TCSANOW || when > TCSAFLUSH)
+		return EINVAL;
+
+	if(int e = sys_ioctl(fd, TCSETS, const_cast<struct termios *>(attr), nullptr); e)
 		return e;
 	return 0;
 }
@@ -733,8 +746,8 @@ int sys_tcdrain(int) {
 }
 
 int sys_socket(int domain, int type_and_flags, int proto, int *fd) {
-	constexpr int type_mask = int(0xFFFF);
-	constexpr int flags_mask = ~int(0xFFFF);
+	constexpr int type_mask = int(0xF);
+	constexpr int flags_mask = ~int(0xF);
 	__ensure(!((type_and_flags & flags_mask) & ~(SOCK_CLOEXEC | SOCK_NONBLOCK)));
 
 	SignalGuard sguard;
@@ -796,8 +809,8 @@ int sys_pipe(int *fds, int flags) {
 }
 
 int sys_socketpair(int domain, int type_and_flags, int proto, int *fds) {
-	constexpr int type_mask = int(0xFFFF);
-	constexpr int flags_mask = ~int(0xFFFF);
+	constexpr int type_mask = int(0xF);
+	constexpr int flags_mask = ~int(0xF);
 	__ensure(!((type_and_flags & flags_mask) & ~(SOCK_CLOEXEC | SOCK_NONBLOCK)));
 
 	SignalGuard sguard;
@@ -822,7 +835,11 @@ int sys_socketpair(int domain, int type_and_flags, int proto, int *fds) {
 
 	managarm::posix::SvrResponse<MemoryAllocator> resp(getSysdepsAllocator());
 	resp.ParseFromArray(recvResp.data(), recvResp.length());
-	__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
+	if(resp.error() == managarm::posix::Errors::PROTOCOL_NOT_SUPPORTED) {
+		return EPROTONOSUPPORT;
+	} else {
+		__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
+	}
 	__ensure(resp.fds_size() == 2);
 	fds[0] = resp.fds(0);
 	fds[1] = resp.fds(1);
@@ -836,7 +853,7 @@ int sys_msg_send(int sockfd, const struct msghdr *hdr, int flags, ssize_t *lengt
 		return EBADF;
 
 	size_t overall_size = 0;
-	for(int i = 0; i < hdr->msg_iovlen; i++) {
+	for(size_t i = 0; i < hdr->msg_iovlen; i++) {
 		HelSgItem item{
 			.buffer = hdr->msg_iov[i].iov_base,
 			.length = hdr->msg_iov[i].iov_len,
@@ -851,21 +868,32 @@ int sys_msg_send(int sockfd, const struct msghdr *hdr, int flags, ssize_t *lengt
 	req.set_flags(flags);
 	req.set_size(overall_size);
 
+	req.set_has_cmsg_creds(false);
+	req.set_has_cmsg_rights(false);
 	for(auto cmsg = CMSG_FIRSTHDR(hdr); cmsg; cmsg = CMSG_NXTHDR(hdr, cmsg)) {
 		__ensure(cmsg->cmsg_level == SOL_SOCKET);
-		if(cmsg->cmsg_type == SCM_CREDENTIALS) {
-			mlibc::infoLogger() << "mlibc: SCM_CREDENTIALS requested but we don't handle that yet!" << frg::endlog;
-			return EINVAL;
-		}
-		__ensure(cmsg->cmsg_type == SCM_RIGHTS);
 		__ensure(cmsg->cmsg_len >= sizeof(struct cmsghdr));
-
-		size_t size = cmsg->cmsg_len - CMSG_ALIGN(sizeof(struct cmsghdr));
-		__ensure(!(size % sizeof(int)));
-		for(size_t off = 0; off < size; off += sizeof(int)) {
-			int fd;
-			memcpy(&fd, CMSG_DATA(cmsg) + off, sizeof(int));
-			req.add_fds(fd);
+		if(cmsg->cmsg_type == SCM_CREDENTIALS) {
+			req.set_has_cmsg_creds(true);
+			size_t size = cmsg->cmsg_len - CMSG_ALIGN(sizeof(struct cmsghdr));
+			__ensure(size == sizeof(struct ucred));
+			struct ucred creds;
+			memcpy(&creds, CMSG_DATA(cmsg), sizeof(struct ucred));
+			req.set_creds_pid(creds.pid);
+			req.set_creds_uid(creds.uid);
+			req.set_creds_gid(creds.gid);
+		} else if(cmsg->cmsg_type == SCM_RIGHTS) {
+			req.set_has_cmsg_rights(true);
+			size_t size = cmsg->cmsg_len - CMSG_ALIGN(sizeof(struct cmsghdr));
+			__ensure(!(size % sizeof(int)));
+			for(size_t off = 0; off < size; off += sizeof(int)) {
+				int fd;
+				memcpy(&fd, CMSG_DATA(cmsg) + off, sizeof(int));
+				req.add_fds(fd);
+			}
+		} else {
+			mlibc::infoLogger() << "mlibc: sys_msg_send only supports SCM_RIGHTS or SCM_CREDENTIALS, got: " << cmsg->cmsg_type << "!" << frg::endlog;
+			return EINVAL;
 		}
 	}
 
@@ -912,6 +940,8 @@ int sys_msg_send(int sockfd, const struct msghdr *hdr, int flags, ssize_t *lengt
 		return EAFNOSUPPORT;
 	}else if(resp.error() == managarm::fs::Errors::MESSAGE_TOO_LARGE) {
 		return EMSGSIZE;
+	}else if(resp.error() == managarm::fs::Errors::ILLEGAL_OPERATION_TARGET) {
+		return EOPNOTSUPP;
 	}else{
 		__ensure(resp.error() == managarm::fs::Errors::SUCCESS);
 		*length = resp.size();
@@ -1094,12 +1124,14 @@ int sys_poll(struct pollfd *fds, nfds_t count, int timeout, int *num_events) {
 }
 
 int sys_epoll_create(int flags, int *fd) {
-	__ensure(!(flags & ~(EPOLL_CLOEXEC)));
+	// Some applications assume EPOLL_CLOEXEC and O_CLOEXEC to be the same.
+	// They are on linux, but not yet on managarm.
+	__ensure(!(flags & ~(EPOLL_CLOEXEC | O_CLOEXEC)));
 
 	SignalGuard sguard;
 
 	uint32_t proto_flags = 0;
-	if(flags & EPOLL_CLOEXEC)
+	if(flags & EPOLL_CLOEXEC || flags & O_CLOEXEC)
 		proto_flags |= managarm::posix::OpenFlags::OF_CLOEXEC;
 
 	managarm::posix::CntRequest<MemoryAllocator> req(getSysdepsAllocator());
@@ -1184,7 +1216,7 @@ int sys_epoll_pwait(int epfd, struct epoll_event *ev, int n,
 	req.set_size(n);
 	req.set_timeout(timeout > 0 ? int64_t{timeout} * 1000000 : timeout);
 	if(sigmask != NULL) {
-		req.set_sigmask((long int)*sigmask);
+		req.set_sigmask(*reinterpret_cast<const int64_t *>(sigmask));
 		req.set_sigmask_needed(true);
 	} else {
 		req.set_sigmask_needed(false);
@@ -1283,7 +1315,7 @@ int sys_signalfd_create(const sigset_t *masks, int flags, int *fd)  {
 	managarm::posix::CntRequest<MemoryAllocator> req(getSysdepsAllocator());
 	req.set_request_type(managarm::posix::CntReqType::SIGNALFD_CREATE);
 	req.set_flags(proto_flags);
-	req.set_sigset(*masks);
+	req.set_sigset(*reinterpret_cast<const uint64_t *>(masks));
 
 	auto [offer, send_req, recv_resp] = exchangeMsgsSync(
 		getPosixLane(),
@@ -1303,14 +1335,47 @@ int sys_signalfd_create(const sigset_t *masks, int flags, int *fd)  {
 	return 0;
 }
 
+int sys_reboot(int command) {
+	if(command != RB_POWER_OFF && command != RB_AUTOBOOT) {
+		mlibc::infoLogger() << "mlibc: Anything other than power off or reboot is not supported yet!" << frg::endlog;
+		return EINVAL;
+	}
+
+	SignalGuard sguard;
+
+	managarm::posix::RebootRequest<MemoryAllocator> req(getSysdepsAllocator());
+	req.set_cmd(command);
+
+	auto [offer, sendReq, recvResp] = exchangeMsgsSync(
+		getPosixLane(),
+		helix_ng::offer(
+			helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+			helix_ng::recvInline()
+		)
+	);
+
+	HEL_CHECK(offer.error());
+	HEL_CHECK(sendReq.error());
+	HEL_CHECK(recvResp.error());
+
+	managarm::posix::SvrResponse<MemoryAllocator> resp(getSysdepsAllocator());
+	resp.ParseFromArray(recvResp.data(), recvResp.length());
+	if(resp.error() == managarm::posix::Errors::INSUFFICIENT_PERMISSION)
+		return EPERM;
+	__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
+	return 0;
+}
+
 int sys_inotify_create(int flags, int *fd) {
-	__ensure(!(flags & ~(IN_CLOEXEC)));
+	__ensure(!(flags & ~(IN_CLOEXEC | IN_NONBLOCK)));
 
 	SignalGuard sguard;
 
 	uint32_t proto_flags = 0;
 	if(flags & IN_CLOEXEC)
 		proto_flags |= managarm::posix::OpenFlags::OF_CLOEXEC;
+	if(flags & IN_NONBLOCK)
+		proto_flags |= managarm::posix::OpenFlags::OF_NONBLOCK;
 
 	managarm::posix::InotifyCreateRequest<MemoryAllocator> req(getSysdepsAllocator());
 	req.set_flags(proto_flags);
@@ -1373,10 +1438,9 @@ int sys_eventfd_create(unsigned int initval, int flags, int *fd) {
 	SignalGuard sguard;
 
 	uint32_t proto_flags = 0;
-	if (flags & EFD_NONBLOCK) proto_flags |= managarm::posix::OpenFlags::OF_NONBLOCK;
-	if (flags & EFD_CLOEXEC) proto_flags |= managarm::posix::OpenFlags::OF_CLOEXEC;
-	if (flags & EFD_SEMAPHORE)
-		return ENOSYS;
+	if (flags & EFD_NONBLOCK) proto_flags |= managarm::posix::EventFdFlags::NONBLOCK;
+	if (flags & EFD_CLOEXEC) proto_flags |= managarm::posix::EventFdFlags::CLOEXEC;
+	if (flags & EFD_SEMAPHORE) proto_flags |= managarm::posix::EventFdFlags::SEMAPHORE;
 
 	managarm::posix::EventfdCreateRequest<MemoryAllocator> req(getSysdepsAllocator());
 	req.set_flags(proto_flags);
@@ -1405,13 +1469,16 @@ int sys_open(const char *path, int flags, mode_t mode, int *fd) {
 	return sys_openat(AT_FDCWD, path, flags, mode, fd);
 }
 
-int sys_openat(int dirfd, const char *path, int flags, mode_t, int *fd) {
+int sys_openat(int dirfd, const char *path, int flags, mode_t mode, int *fd) {
 	SignalGuard sguard;
 
-	mlibc::infoLogger() << "\e[35mmlibc: sys_openat() ignores mode\e[39m"
-				<< frg::endlog;
+	// We do not support O_TMPFILE.
+	if(flags & O_TMPFILE)
+		return EOPNOTSUPP;
 
 	uint32_t proto_flags = 0;
+	if(flags & O_APPEND)
+		proto_flags |= managarm::posix::OpenFlags::OF_APPEND;
 	if(flags & O_CREAT)
 		proto_flags |= managarm::posix::OpenFlags::OF_CREATE;
 	if(flags & O_EXCL)
@@ -1426,19 +1493,20 @@ int sys_openat(int dirfd, const char *path, int flags, mode_t, int *fd) {
 	if(flags & O_NOCTTY)
 		proto_flags |= managarm::posix::OpenFlags::OF_NOCTTY;
 
-	if(flags & O_RDONLY)
-		proto_flags |= managarm::posix::OpenFlags::OF_RDONLY;
-	else if(flags & O_WRONLY)
-		proto_flags |= managarm::posix::OpenFlags::OF_WRONLY;
-	else if(flags & O_RDWR)
-		proto_flags |= managarm::posix::OpenFlags::OF_RDWR;
-	else if(flags & O_PATH)
+	if(flags & O_PATH)
 		proto_flags |= managarm::posix::OpenFlags::OF_PATH;
+	else if((flags & O_ACCMODE) == O_RDONLY)
+		proto_flags |= managarm::posix::OpenFlags::OF_RDONLY;
+	else if((flags & O_ACCMODE) == O_WRONLY)
+		proto_flags |= managarm::posix::OpenFlags::OF_WRONLY;
+	else if((flags & O_ACCMODE) == O_RDWR)
+		proto_flags |= managarm::posix::OpenFlags::OF_RDWR;
 
 	managarm::posix::OpenAtRequest<MemoryAllocator> req(getSysdepsAllocator());
 	req.set_fd(dirfd);
 	req.set_path(frg::string<MemoryAllocator>(getSysdepsAllocator(), path));
 	req.set_flags(proto_flags);
+	req.set_mode(mode);
 
 	auto [offer, sendHead, sendTail, recvResp] = exchangeMsgsSync(
 		getPosixLane(),
@@ -1509,6 +1577,8 @@ int sys_mkfifoat(int dirfd, const char *path, mode_t mode) {
 		return EBADF;
 	}else if(resp.error() == managarm::posix::Errors::ILLEGAL_ARGUMENTS) {
 		return EINVAL;
+	}else if(resp.error() == managarm::posix::Errors::INTERNAL_ERROR) {
+		return EIEIO;
 	}else{
 		__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
 		return 0;
@@ -1594,6 +1664,10 @@ int sys_read(int fd, void *data, size_t max_size, ssize_t *bytes_read) {
 		return EINVAL;
 	}else if(resp.error() == managarm::fs::Errors::WOULD_BLOCK) {
 		return EAGAIN;
+	}else if(resp.error() == managarm::fs::Errors::IS_DIRECTORY) {
+		return EISDIR;
+	}else if(resp.error() == managarm::fs::Errors::NOT_CONNECTED) {
+		return ENOTCONN;
 	}else if(resp.error() == managarm::fs::Errors::END_OF_FILE) {
 		*bytes_read = 0;
 		return 0;
@@ -1662,7 +1736,9 @@ int sys_write(int fd, const void *data, size_t size, ssize_t *bytes_written) {
 		return ENOTCONN;
 	}else{
 		__ensure(resp.error() == managarm::fs::Errors::SUCCESS);
-		*bytes_written = resp.size();
+		if(bytes_written) {
+			*bytes_written = resp.size();
+		}
 		return 0;
 	}
 }
@@ -1804,7 +1880,9 @@ int sys_seek(int fd, off_t offset, int whence, off_t *new_offset) {
 	resp.ParseFromArray(recv_resp.data(), recv_resp.length());
 	if(resp.error() == managarm::fs::Errors::SEEK_ON_PIPE) {
 		return ESPIPE;
-	}else{
+	} else if(resp.error() == managarm::fs::Errors::ILLEGAL_ARGUMENT) {
+		return EINVAL;
+	} else {
 		__ensure(resp.error() == managarm::fs::Errors::SUCCESS);
 		*new_offset = resp.offset();
 		return 0;
@@ -2008,21 +2086,26 @@ int sys_stat(fsfd_target fsfdt, int fd, const char *path, int flags, struct stat
 }
 
 int sys_readlink(const char *path, void *data, size_t max_size, ssize_t *length) {
+	return sys_readlinkat(AT_FDCWD, path, data, max_size, length);
+}
+
+int sys_readlinkat(int dirfd, const char *path, void *data, size_t max_size, ssize_t *length) {
 	SignalGuard sguard;
 
-	managarm::posix::CntRequest<MemoryAllocator> req(getSysdepsAllocator());
-	req.set_request_type(managarm::posix::CntReqType::READLINK);
+	managarm::posix::ReadlinkAtRequest<MemoryAllocator> req(getSysdepsAllocator());
+	req.set_fd(dirfd);
 	req.set_path(frg::string<MemoryAllocator>(getSysdepsAllocator(), path));
 
-	auto [offer, send_req, recv_resp, recv_data] = exchangeMsgsSync(
+	auto [offer, send_head, send_tail, recv_resp, recv_data] = exchangeMsgsSync(
 		getPosixLane(),
 		helix_ng::offer(
-			helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+			helix_ng::sendBragiHeadTail(req, getSysdepsAllocator()),
 			helix_ng::recvInline(),
 			helix_ng::recvBuffer(data, max_size))
 	);
 	HEL_CHECK(offer.error());
-	HEL_CHECK(send_req.error());
+	HEL_CHECK(send_head.error());
+	HEL_CHECK(send_tail.error());
 	HEL_CHECK(recv_resp.error());
 
 	managarm::posix::SvrResponse<MemoryAllocator> resp(getSysdepsAllocator());
@@ -2062,6 +2145,12 @@ int sys_rmdir(const char *path) {
 	resp.ParseFromArray(recv_resp.data(), recv_resp.length());
 	if(resp.error() == managarm::posix::Errors::FILE_NOT_FOUND) {
 		return ENOENT;
+	}else if(resp.error() == managarm::posix::Errors::DIRECTORY_NOT_EMPTY) {
+		return ENOTEMPTY;
+	}else if(resp.error() == managarm::posix::Errors::INTERNAL_ERROR) {
+		return EIEIO;
+	}else if(resp.error() == managarm::posix::Errors::NOT_A_DIRECTORY) {
+		return ENOTDIR;
 	}else{
 		__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
 		return 0;
@@ -2166,6 +2255,14 @@ int sys_unlinkat(int fd, const char *path, int flags) {
 		return EBUSY;
 	}else if(resp.error() == managarm::posix::Errors::IS_DIRECTORY) {
 		return EISDIR;
+	}else if(resp.error() == managarm::posix::Errors::ILLEGAL_ARGUMENTS) {
+		return EINVAL;
+	}else if(resp.error() == managarm::posix::Errors::BAD_FD) {
+		return EBADF;
+	}else if(resp.error() == managarm::posix::Errors::NOT_A_DIRECTORY) {
+		return ENOTDIR;
+	}else if(resp.error() == managarm::posix::Errors::DIRECTORY_NOT_EMPTY) {
+		return ENOTEMPTY;
 	}else{
 		__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
 		return 0;
@@ -2456,9 +2553,9 @@ int sys_uname(struct utsname *buf) {
 	__ensure(buf);
 	mlibc::infoLogger() << "\e[31mmlibc: uname() returns static information\e[39m" << frg::endlog;
 	strcpy(buf->sysname, "Managarm");
-	strcpy(buf->nodename, "?");
-	strcpy(buf->release, "?");
-	strcpy(buf->version, "?");
+	strcpy(buf->nodename, "managarm");
+	strcpy(buf->release, "0.0.1-rolling");
+	strcpy(buf->version, "Managarm is not Managram");
 #if defined(__x86_64__)
 	strcpy(buf->machine, "x86_64");
 #elif defined (__aarch64__)
@@ -2490,6 +2587,99 @@ int sys_unlockpt(int fd) {
 
 	if(int e = sys_ioctl(fd, TIOCSPTLCK, &unlock, NULL); e)
 		return e;
+
+	return 0;
+}
+
+int sys_getrlimit(int resource, struct rlimit *limit) {
+	switch(resource) {
+		case RLIMIT_NOFILE:
+			/* TODO: change this once we support more than 512 */
+			limit->rlim_cur = 512;
+			limit->rlim_max = 512;
+			return 0;
+		default:
+			return EINVAL;
+	}
+}
+
+int sys_sysconf(int num, long *ret) {
+	switch(num) {
+		case _SC_OPEN_MAX: {
+			struct rlimit ru;
+			if(int e = sys_getrlimit(RLIMIT_NOFILE, &ru); e) {
+				return e;
+			}
+			*ret = (ru.rlim_cur == RLIM_INFINITY) ? -1 : ru.rlim_cur;
+			break;
+		}
+		default: {
+			SignalGuard sguard;
+
+			managarm::posix::SysconfRequest<MemoryAllocator> req(getSysdepsAllocator());
+			req.set_num(num);
+
+			auto [offer, send_req, recv_resp] = exchangeMsgsSync(getPosixLane(),
+				helix_ng::offer(
+					helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+					helix_ng::recvInline()
+				)
+			);
+
+			HEL_CHECK(offer.error());
+			HEL_CHECK(send_req.error());
+			HEL_CHECK(recv_resp.error());
+
+			managarm::posix::SysconfResponse<MemoryAllocator> resp(getSysdepsAllocator());
+			resp.ParseFromArray(recv_resp.data(), recv_resp.length());
+			if(resp.error() == managarm::posix::Errors::ILLEGAL_ARGUMENTS) {
+				return EINVAL;
+			}
+
+			*ret = resp.value();
+
+			__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
+			return 0;
+		}
+	}
+
+	return 0;
+}
+
+int sys_sysinfo(struct sysinfo *info) {
+	SignalGuard sguard;
+
+	managarm::posix::GetMemoryInformationRequest<MemoryAllocator> req(getSysdepsAllocator());
+
+	auto [offer, send_req, recv_resp] = exchangeMsgsSync(getPosixLane(),
+		helix_ng::offer(
+			helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+			helix_ng::recvInline()
+		)
+	);
+
+	HEL_CHECK(offer.error());
+	HEL_CHECK(send_req.error());
+	HEL_CHECK(recv_resp.error());
+
+	managarm::posix::GetMemoryInformationResponse resp(getSysdepsAllocator());
+	resp.ParseFromArray(recv_resp.data(), recv_resp.length());
+
+	FILE *uptime = fopen("/proc/uptime", "r");
+	__ensure(uptime);
+	int uptime_sec;
+	int uptime_msec;
+	int idle_sec;
+	int idle_msec;
+	fscanf(uptime, "%d.%d %d.%d", &uptime_sec, &uptime_msec, &idle_sec, &idle_msec);
+	fclose(uptime);
+
+	// TODO: fill in missing fields.
+	*info = {};
+	info->uptime = uptime_sec;
+	info->totalram = resp.total_usable_memory();
+	info->freeram = resp.available_memory();
+	info->mem_unit = resp.memory_unit();
 
 	return 0;
 }

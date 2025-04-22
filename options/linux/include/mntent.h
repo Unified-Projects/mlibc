@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 
-// TODO: Refer to _PATH_MOUNTED
+/* TODO: Refer to _PATH_MOUNTED */
 #define MOUNTED "/etc/mtab"
 
 /* Generic mount options */
@@ -29,17 +29,17 @@ struct mntent {
 
 #ifndef __MLIBC_ABI_ONLY
 
-FILE *setmntent(const char *, const char *);
+FILE *setmntent(const char *__filename, const char *__type);
 
-struct mntent *getmntent(FILE *);
+struct mntent *getmntent(FILE *__f);
 
-int addmntent(FILE *, const struct mntent *);
+int addmntent(FILE *__f, const struct mntent *__mnt);
 
-int endmntent(FILE *);
+int endmntent(FILE *__f);
 
-char *hasmntopt(const struct mntent *, const char *);
+char *hasmntopt(const struct mntent *__mnt, const char *__opt);
 
-struct mntent *getmntent_r(FILE *, struct mntent *,  char *, int);
+struct mntent *getmntent_r(FILE *__f, struct mntent *__mnt, char *__linebuf, int __buflen);
 
 #endif /* !__MLIBC_ABI_ONLY */
 
@@ -47,4 +47,4 @@ struct mntent *getmntent_r(FILE *, struct mntent *,  char *, int);
 }
 #endif
 
-#endif // _MNTENT_H
+#endif /* _MNTENT_H */

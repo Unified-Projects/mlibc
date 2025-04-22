@@ -1,4 +1,4 @@
-rtdl_dso_sources += files(
+rtld_dso_sources += files(
 	host_machine.cpu_family() / 'arch-syscall.cpp',
 	'generic/sysdeps.cpp',
 )
@@ -8,7 +8,7 @@ linux_include_dirs = [
 	include_directories('include-internal/'),
 ]
 
-rtdl_include_dirs += linux_include_dirs
+rtld_include_dirs += linux_include_dirs
 libc_include_dirs += linux_include_dirs
 libc_sources += files(
 	host_machine.cpu_family() / 'signals.S',
@@ -34,6 +34,7 @@ if not no_headers
 		'include/abi-bits/fcntl.h',
 		'include/abi-bits/in.h',
 		'include/abi-bits/stat.h',
+		'include/abi-bits/statx.h',
 		'include/abi-bits/signal.h',
 		'include/abi-bits/reboot.h',
 		'include/abi-bits/resource.h',
@@ -71,7 +72,9 @@ if not no_headers
 		'include/abi-bits/statvfs.h',
 		'include/abi-bits/ioctls.h',
 		'include/abi-bits/xattr.h',
-		subdir: 'abi-bits'
+		'include/abi-bits/msg.h',
+		subdir: 'abi-bits',
+		follow_symlinks: true
 	)
 
 	install_headers('include/syscall.h')

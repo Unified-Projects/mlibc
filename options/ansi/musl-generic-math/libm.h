@@ -18,7 +18,7 @@
 #include <math.h>
 
 #if LDBL_MANT_DIG == 53 && LDBL_MAX_EXP == 1024
-#elif LDBL_MANT_DIG == 64 && LDBL_MAX_EXP == 16384 && __BYTE_ORDER == __LITTLE_ENDIAN
+#elif LDBL_MANT_DIG == 64 && LDBL_MAX_EXP == 16384 && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 union ldshape {
 	long double f;
 	struct {
@@ -26,7 +26,18 @@ union ldshape {
 		uint16_t se;
 	} i;
 };
-#elif LDBL_MANT_DIG == 113 && LDBL_MAX_EXP == 16384 && __BYTE_ORDER == __LITTLE_ENDIAN
+#elif LDBL_MANT_DIG == 64 && LDBL_MAX_EXP == 16384 && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+/* This is the m68k variant of 80-bit long double, and this definition only works
+ * on archs where the alignment requirement of uint64_t is <= 4. */
+union ldshape {
+	long double f;
+	struct {
+		uint16_t se;
+		uint16_t pad;
+		uint64_t m;
+	} i;
+};
+#elif LDBL_MANT_DIG == 113 && LDBL_MAX_EXP == 16384 && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 union ldshape {
 	long double f;
 	struct {
@@ -40,7 +51,7 @@ union ldshape {
 		uint64_t hi;
 	} i2;
 };
-#elif LDBL_MANT_DIG == 113 && LDBL_MAX_EXP == 16384 && __BYTE_ORDER == __BIG_ENDIAN
+#elif LDBL_MANT_DIG == 113 && LDBL_MAX_EXP == 16384 && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 union ldshape {
 	long double f;
 	struct {
@@ -163,14 +174,14 @@ double __sin(double,double,int);
 double __cos(double,double);
 double __tan(double,double,int);
 double __expo2(double);
-//double complex __ldexp_cexp(double complex,int);
+/*double complex __ldexp_cexp(double complex,int); */
 
 int    __rem_pio2f(float,double*);
 float  __sindf(double);
 float  __cosdf(double);
 float  __tandf(double,int);
 float  __expo2f(float);
-//float complex __ldexp_cexpf(float complex,int);
+/*float complex __ldexp_cexpf(float complex,int); */
 
 int __rem_pio2l(long double, long double *);
 long double __sinl(long double, long double, int);

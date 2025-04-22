@@ -7,12 +7,12 @@
 #include <mlibc/threads.hpp>
 #include <mlibc/tcb.hpp>
 
-extern "C" Tcb *__rtdl_allocateTcb();
+extern "C" Tcb *__rtld_allocateTcb();
 
 namespace mlibc {
 
 int thread_create(struct __mlibc_thread_data **__restrict thread, const struct __mlibc_threadattr *__restrict attrp, void *entry, void *__restrict user_arg, bool returns_int) {
-	auto new_tcb = __rtdl_allocateTcb();
+	auto new_tcb = __rtld_allocateTcb();
 	pid_t tid;
 	struct __mlibc_threadattr attr = {};
 	if (!attrp)
@@ -34,7 +34,7 @@ int thread_create(struct __mlibc_thread_data **__restrict thread, const struct _
 		return ENOSYS;
 	}
 	int ret = mlibc::sys_prepare_stack(&stack, entry,
-			user_arg, new_tcb, &attr.__mlibc_stacksize, &attr.__mlibc_guardsize);
+			user_arg, new_tcb, &attr.__mlibc_stacksize, &attr.__mlibc_guardsize, &new_tcb->stackAddr);
 	if (ret)
 		return ret;
 
@@ -44,9 +44,6 @@ int thread_create(struct __mlibc_thread_data **__restrict thread, const struct _
 	}
 	new_tcb->stackSize = attr.__mlibc_stacksize;
 	new_tcb->guardSize = attr.__mlibc_guardsize;
-	new_tcb->stackAddr = reinterpret_cast<void*>(
-			reinterpret_cast<uintptr_t>(stack)
-			- attr.__mlibc_stacksize - attr.__mlibc_guardsize);
 	new_tcb->returnValueType = (returns_int) ? TcbThreadReturnValue::Integer : TcbThreadReturnValue::Pointer;
 	mlibc::sys_clone(new_tcb, &tid, stack);
 	*thread = reinterpret_cast<struct __mlibc_thread_data *>(new_tcb);
@@ -94,9 +91,6 @@ static constexpr unsigned int mutexErrorCheck = 2;
 // TODO: either use uint32_t or determine the bit based on sizeof(int).
 static constexpr unsigned int mutex_owner_mask = (static_cast<uint32_t>(1) << 30) - 1;
 static constexpr unsigned int mutex_waiters_bit = static_cast<uint32_t>(1) << 31;
-
-// Only valid for the internal __mlibc_m mutex of wrlocks.
-static constexpr unsigned int mutex_excl_bit = static_cast<uint32_t>(1) << 30;
 
 int thread_mutex_init(struct __mlibc_mutex *__restrict mutex,
 		const struct __mlibc_mutexattr *__restrict attr) {
@@ -163,7 +157,8 @@ int thread_mutex_lock(struct __mlibc_mutex *mutex) {
 
 				// If the wait returns EAGAIN, that means that the mutex_waiters_bit was just unset by
 				// some other thread. In this case, we should loop back around.
-				if (e && e != EAGAIN)
+				// Also do so in case of a signal being caught.
+				if (e && e != EAGAIN && e != EINTR)
 					mlibc::panicLogger() << "sys_futex_wait() failed with error code " << e << frg::endlog;
 
 				// Opportunistically try to take the lock after we wake up.

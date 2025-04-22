@@ -4,8 +4,7 @@
 
 #define SG_IO 0x2285
 
-#define SG_DXFER_NONE (-1)
-#define SG_DXFER_FROM_DEV (-3)
+#define SG_GET_VERSION_NUM 0x2282
 
 #define SG_FLAG_DIRECT_IO 1
 #define SG_FLAG_LUN_INHIBIT 2
@@ -13,16 +12,16 @@
 #define SG_INFO_OK 0x0
 #define SG_INFO_OK_MASK 0x1
 
-#define SG_DXFER_NONE -1
-#define SG_DXFER_TO_DEV -2
-#define SG_DXFER_TO_FROM_DEV -3
-#define SG_DXFER_TO_FROM_DEV -4
+#define SG_DXFER_NONE (-1)
+#define SG_DXFER_TO_DEV (-2)
+#define SG_DXFER_FROM_DEV (-3)
+#define SG_DXFER_TO_FROM_DEV (-4)
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-struct sg_io_hdr {
+typedef struct sg_io_hdr {
     int interface_id;
     int dxfer_direction;
     unsigned char cmd_len;
@@ -31,7 +30,7 @@ struct sg_io_hdr {
     unsigned int dxfer_len;
     void *dxferp;
     unsigned char *cmdp;
-    void *sbp;
+    unsigned char *sbp;
     unsigned int timeout;
     unsigned int flags;
     int pack_id;
@@ -45,7 +44,7 @@ struct sg_io_hdr {
     int resid;
     unsigned int duration;
     unsigned int info;
-};
+} sg_io_hdr_t;
 
 struct sg_scsi_id {
     int host_no;
@@ -74,5 +73,5 @@ typedef struct sg_req_info {
 }
 #endif
 
-#endif // _LINUX_SCSI_SG_H
+#endif /* _LINUX_SCSI_SG_H */
 

@@ -17,7 +17,17 @@ extern "C" {
 
 #define O_NDELAY O_NONBLOCK
 
+/* WARNING: keep `flock` and `flock64` in sync or bad things will happen! */
+
 struct flock {
+	short l_type;
+	short l_whence;
+	off_t l_start;
+	off_t l_len;
+	pid_t l_pid;
+};
+
+struct flock64 {
 	short l_type;
 	short l_whence;
 	off_t l_start;
@@ -27,17 +37,18 @@ struct flock {
 
 #ifndef __MLIBC_ABI_ONLY
 
-int creat(const char *, mode_t);
-int fallocate(int fd, int mode, off_t offset, off_t len);
-int fcntl(int fd, int command, ...);
-int open(const char *path, int flags, ...);
-int openat(int, const char *, int, ...);
-int posix_fadvise(int, off_t, off_t, int);
-int posix_fallocate(int, off_t, off_t);
+int creat(const char *__path, mode_t __mode);
+int fallocate(int __fd, int __mode, off_t __offset, off_t __len);
+int fcntl(int __fd, int __command, ...);
+int open(const char *__path, int __flags, ...);
+int open64(const char *__path, int __flags, ...);
+int openat(int __dirfd, const char *__path, int __flags, ...);
+int posix_fadvise(int __fd, off_t __offset, off_t __size, int __advice);
+int posix_fallocate(int __fd, off_t __offset, off_t __size);
 
 #endif /* !__MLIBC_ABI_ONLY */
 
-// This is a linux extension
+/* This is a linux extension */
 
 struct file_handle {
         unsigned int handle_bytes;
@@ -47,11 +58,11 @@ struct file_handle {
 
 #ifndef __MLIBC_ABI_ONLY
 
-int name_to_handle_at(int, const char *, struct file_handle *, int *, int);
-int open_by_handle_at(int, struct file_handle *, int);
+int name_to_handle_at(int __dirfd, const char *__path, struct file_handle *__handle, int *__mount_id, int __flags);
+int open_by_handle_at(int __dirfd, struct file_handle *__handle, int __flags);
 
-ssize_t splice(int fd_in, off_t *off_in, int fd_out, off_t *off_out, size_t len, unsigned int flags);
-ssize_t vmsplice(int fd, const struct iovec *iov, size_t nr_segs, unsigned int flags);
+ssize_t splice(int __fd_in, off_t *__off_in, int __fd_out, off_t *__off_out, size_t __len, unsigned int __flags);
+ssize_t vmsplice(int __fd, const struct iovec *__iov, size_t __nr_segs, unsigned int __flags);
 
 #endif /* !__MLIBC_ABI_ONLY */
 
@@ -60,14 +71,15 @@ ssize_t vmsplice(int fd, const struct iovec *iov, size_t nr_segs, unsigned int f
 #define SPLICE_F_MORE 4
 #define SPLICE_F_GIFT 8
 
-#define AT_NO_AUTOMOUNT 0x800
-
 #define F_SETPIPE_SZ 1031
 #define F_GETPIPE_SZ 1032
+
+#define FALLOC_FL_KEEP_SIZE 1
+#define FALLOC_FL_PUNCH_HOLE 2
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // _FCNTL_H
+#endif /* _FCNTL_H */
 

@@ -15,7 +15,8 @@ extern "C" {
 #define IPTOS_THROUGHPUT 0x08
 #define IPTOS_RELIABILITY 0x04
 #define IPTOS_LOWCOST 0x02
-#define IPTOS_LOWDELAY IPTOS_LOWCOST
+#define IPTOS_MINCOST IPTOS_LOWCOST
+#define IPTOS_CLASS_CS0 0x00
 #define IPTOS_CLASS_CS4 0x80
 #define IPTOS_CLASS_CS6 0xC0
 
@@ -71,5 +72,5 @@ struct iphdr {
 }
 #endif
 
-#endif // _NETINET_IP_H
+#endif /* _NETINET_IP_H */
 

@@ -4,9 +4,8 @@
 #include <mlibc-config.h>
 #include <internal-config.h>
 
-#if __MLIBC_ANSI_OPTION
-#	include <mlibc/ansi-sysdeps.hpp>
-#endif /* __MLIBC_ANSI_OPTION */
+/* The ANSI option is always enabled. */
+#include <mlibc/ansi-sysdeps.hpp>
 
 #if __MLIBC_POSIX_OPTION
 #	include <mlibc/posix-sysdeps.hpp>
@@ -24,9 +23,9 @@
 #	include <mlibc/bsd-sysdeps.hpp>
 #endif /* __MLIBC_BSD_OPTION */
 
-#if MLIBC_BUILDING_RTDL
-#	include <mlibc/rtdl-sysdeps.hpp>
-#endif /* MLIBC_BUILDING_RTDL */
+#if MLIBC_BUILDING_RTLD
+#	include <mlibc/rtld-sysdeps.hpp>
+#endif /* MLIBC_BUILDING_RTLD */
 
 #include <mlibc/internal-sysdeps.hpp>
 

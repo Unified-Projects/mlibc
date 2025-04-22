@@ -1,13 +1,16 @@
 #ifndef MLIBC_LINUX_SYSDEPS
 #define MLIBC_LINUX_SYSDEPS
 
+#include <ifaddrs.h>
 #include <sched.h>
 #include <stdarg.h>
 #include <sys/epoll.h>
 #include <sys/sysinfo.h>
+#include <sys/statfs.h>
 #include <poll.h>
 #include <abi-bits/pid_t.h>
 #include <abi-bits/mode_t.h>
+#include <abi-bits/statx.h>
 #include <bits/ssize_t.h>
 #include <bits/size_t.h>
 
@@ -17,6 +20,7 @@ int sys_open(const char *pathname, int flags, mode_t mode, int *fd);
 int sys_close(int fd);
 int sys_read(int fd, void *buf, size_t count, ssize_t *bytes_read);
 int sys_write(int fd, const void *buf, size_t count, ssize_t *bytes_written);
+int sys_ioctl(int fd, unsigned long request, void *arg, int *result);
 
 [[gnu::weak]] int sys_dup2(int fd, int flags, int newfd);
 [[gnu::weak]] int sys_fork(pid_t *child);
@@ -72,7 +76,12 @@ int sys_write(int fd, const void *buf, size_t count, ssize_t *bytes_written);
 [[gnu::weak]] int sys_lremovexattr(const char *path, const char *name);
 [[gnu::weak]] int sys_fremovexattr(int fd, const char *name);
 
-[[gnu::weak]] int sys_getaffinity(pid_t pid, size_t cpusetsize, cpu_set_t *mask);
+[[gnu::weak]] int sys_statfs(const char *path, struct statfs *buf);
+[[gnu::weak]] int sys_fstatfs(int fd, struct statfs *buf);
+
+[[gnu::weak]] int sys_statx(int dirfd, const char *pathname, int flags, unsigned int mask, struct statx *statxbuf);
+
+[[gnu::weak]] int sys_getifaddrs(struct ifaddrs **);
 
 } // namespace mlibc
 

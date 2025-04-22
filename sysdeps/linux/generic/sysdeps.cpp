@@ -8,6 +8,8 @@
 #include <bits/ensure.h>
 #include <abi-bits/fcntl.h>
 #include <abi-bits/socklen_t.h>
+#include <abi-bits/statx.h>
+#include <mlibc/allocator.hpp>
 #include <mlibc/debug.hpp>
 #include <mlibc/all-sysdeps.hpp>
 #include <mlibc/thread-entry.hpp>
@@ -15,10 +17,16 @@
 #include <sys/syscall.h>
 #include "cxx-syscall.hpp"
 
+#if __MLIBC_LINUX_OPTION && !defined(MLIBC_BUILDING_RTLD)
+
+#include "generic-helpers/netlink.hpp"
+
+#endif
+
 #define STUB_ONLY { __ensure(!"STUB_ONLY function was called"); __builtin_unreachable(); }
 #define UNUSED(x) (void)(x);
 
-#ifndef MLIBC_BUILDING_RTDL
+#ifndef MLIBC_BUILDING_RTLD
 extern "C" long __do_syscall_ret(unsigned long ret) {
 	if(ret > -4096UL) {
 		errno = -ret;
@@ -43,11 +51,42 @@ void sys_libc_panic() {
 	__builtin_trap();
 }
 
+#if defined(__i386__)
+
+struct user_desc {
+	unsigned int entry_number;
+	unsigned long base_addr;
+	unsigned int limit;
+	unsigned int seg_32bit: 1;
+	unsigned int contents: 2;
+	unsigned int read_exec_only: 1;
+	unsigned int limit_in_pages: 1;
+	unsigned int seg_not_present: 1;
+	unsigned int useable: 1;
+};
+
+#endif
+
 int sys_tcb_set(void *pointer) {
 #if defined(__x86_64__)
 	auto ret = do_syscall(SYS_arch_prctl, 0x1002 /* ARCH_SET_FS */, pointer);
 	if(int e = sc_error(ret); e)
 		return e;
+#elif defined(__i386__)
+	struct user_desc desc = {
+		.entry_number = static_cast<unsigned int>(-1),
+		.base_addr = uintptr_t(pointer),
+		.limit = 0xfffff,
+		.seg_32bit = 1,
+		.contents = 0,
+		.read_exec_only = 0,
+		.limit_in_pages = 1,
+		.seg_not_present = 0,
+		.useable = 1,
+	};
+	auto ret = do_syscall(SYS_set_thread_area, &desc);
+	__ensure(!sc_error(ret));
+	asm volatile ("movw %w0, %%gs" : : "q"(desc.entry_number * 8 + 3) :);
 #elif defined(__riscv)
 	uintptr_t thread_data = reinterpret_cast<uintptr_t>(pointer) + sizeof(Tcb);
 	asm volatile ("mv tp, %0" :: "r"(thread_data));
@@ -175,7 +214,15 @@ int sys_utimensat(int dirfd, const char *pathname, const struct timespec times[2
 
 int sys_vm_map(void *hint, size_t size, int prot, int flags,
 		int fd, off_t offset, void **window) {
+	if(offset % 4096)
+		return EINVAL;
+	if(size >= PTRDIFF_MAX)
+		return ENOMEM;
+#if defined(SYS_mmap2)
+	auto ret = do_syscall(SYS_mmap2, hint, size, prot, flags, fd, offset/4096);
+#else
 	auto ret = do_syscall(SYS_mmap, hint, size, prot, flags, fd, offset);
+#endif
 	// TODO: musl fixes up EPERM errors from the kernel.
 	if(int e = sc_error(ret); e)
 		return e;
@@ -191,7 +238,7 @@ int sys_vm_unmap(void *pointer, size_t size) {
 }
 
 // All remaining functions are disabled in ldso.
-#ifndef MLIBC_BUILDING_RTDL
+#ifndef MLIBC_BUILDING_RTLD
 
 int sys_clock_get(int clock, time_t *secs, long *nanos) {
 	struct timespec tp = {};
@@ -221,7 +268,31 @@ int sys_stat(fsfd_target fsfdt, int fd, const char *path, int flags, struct stat
 	else
 		__ensure(fsfdt == fsfd_target::fd_path);
 
+#if defined(SYS_newfstatat)
 	auto ret = do_cp_syscall(SYS_newfstatat, fd, path, statbuf, flags);
+#else
+	auto ret = do_cp_syscall(SYS_fstatat64, fd, path, statbuf, flags);
+#endif
+	if (int e = sc_error(ret); e) {
+		return e;
+	}
+
+#if defined(__i386__)
+	statbuf->st_atim.tv_sec = statbuf->__st_atim32.tv_sec;
+	statbuf->st_atim.tv_nsec = statbuf->__st_atim32.tv_nsec;
+	statbuf->st_mtim.tv_sec = statbuf->__st_mtim32.tv_sec;
+	statbuf->st_mtim.tv_nsec = statbuf->__st_mtim32.tv_nsec;
+	statbuf->st_ctim.tv_sec = statbuf->__st_ctim32.tv_sec;
+	statbuf->st_ctim.tv_nsec = statbuf->__st_ctim32.tv_nsec;
+#endif
+
+	return 0;
+}
+
+static_assert(sizeof(struct statx) == 0x100); // Linux kernel requires it to be precisely 256 bytes.
+
+int sys_statx(int dirfd, const char *path, int flags, unsigned int mask, struct statx *statxbuf) {
+	auto ret = do_cp_syscall(SYS_statx, dirfd, path, flags, mask, statxbuf);
 	if (int e = sc_error(ret); e)
 		return e;
 	return 0;
@@ -242,36 +313,40 @@ int sys_fstatfs(int fd, struct statfs *buf) {
 }
 
 extern "C" void __mlibc_signal_restore(void);
+extern "C" void __mlibc_signal_restore_rt(void);
 
 int sys_sigaction(int signum, const struct sigaction *act,
-                struct sigaction *oldact) {
+		struct sigaction *oldact) {
 	struct ksigaction {
 		void (*handler)(int);
 		unsigned long flags;
 		void (*restorer)(void);
-		sigset_t mask;
+		uint32_t mask[2];
 	};
 
 	struct ksigaction kernel_act, kernel_oldact;
 	if (act) {
 		kernel_act.handler = act->sa_handler;
 		kernel_act.flags = act->sa_flags | SA_RESTORER;
-		kernel_act.restorer = __mlibc_signal_restore;
-		kernel_act.mask = act->sa_mask;
+		kernel_act.restorer = (act->sa_flags & SA_SIGINFO) ? __mlibc_signal_restore_rt : __mlibc_signal_restore;
+		memcpy(&kernel_act.mask, &act->sa_mask, sizeof(kernel_act.mask));
 	}
-        auto ret = do_syscall(SYS_rt_sigaction, signum, act ?
-			&kernel_act : NULL, oldact ?
-			&kernel_oldact : NULL, sizeof(sigset_t));
-        if (int e = sc_error(ret); e)
-                return e;
+
+	static_assert(sizeof(kernel_act.mask) == 8);
+
+	auto ret = do_syscall(SYS_rt_sigaction, signum, act ?
+		&kernel_act : NULL, oldact ?
+		&kernel_oldact : NULL, sizeof(kernel_act.mask));
+	if (int e = sc_error(ret); e)
+		return e;
 
 	if (oldact) {
 		oldact->sa_handler = kernel_oldact.handler;
 		oldact->sa_flags = kernel_oldact.flags;
 		oldact->sa_restorer = kernel_oldact.restorer;
-		oldact->sa_mask = kernel_oldact.mask;
+		memcpy(&oldact->sa_mask, &kernel_oldact.mask, sizeof(kernel_oldact.mask));
 	}
-        return 0;
+	return 0;
 }
 
 int sys_socket(int domain, int type, int protocol, int *fd) {
@@ -374,6 +449,7 @@ int sys_isatty(int fd) {
 
 #include <net/if.h>
 #include <sys/ioctl.h>
+#include <sys/ipc.h>
 #include <sys/user.h>
 #include <sys/utsname.h>
 #include <sys/stat.h>
@@ -402,23 +478,28 @@ int sys_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 }
 
 int sys_pselect(int nfds, fd_set *readfds, fd_set *writefds,
-                fd_set *exceptfds, const struct timespec *timeout, const sigset_t *sigmask, int *num_events) {
-        // The Linux kernel really wants 7 arguments, even tho this is not supported
-        // To fix that issue, they use a struct as the last argument.
-        // See the man page of pselect and the glibc source code
-        struct {
-                sigset_t ss;
-                size_t ss_len;
-        } data;
-        data.ss = (uintptr_t)sigmask;
-        data.ss_len = NSIG / 8;
+		fd_set *exceptfds, const struct timespec *timeout, const sigset_t *sigmask, int *num_events) {
+	// The Linux kernel sometimes modifies the timeout argument.
+	struct timespec local_timeout;
+	if(timeout)
+		local_timeout = *timeout;
 
-        auto ret = do_cp_syscall(SYS_pselect6, nfds, readfds, writefds,
-                        exceptfds, timeout, &data);
-        if (int e = sc_error(ret); e)
-                return e;
-        *num_events = sc_int_result<int>(ret);
-        return 0;
+	// The Linux kernel really wants 7 arguments, even tho this is not supported
+	// To fix that issue, they use a struct as the last argument.
+	// See the man page of pselect and the glibc source code
+	struct {
+		const sigset_t *sigmask;
+		size_t ss_len;
+	} data;
+	data.sigmask = sigmask;
+	data.ss_len = NSIG / 8;
+
+	auto ret = do_cp_syscall(SYS_pselect6, nfds, readfds, writefds,
+			exceptfds, timeout ? &local_timeout : nullptr, &data);
+	if (int e = sc_error(ret); e)
+		return e;
+	*num_events = sc_int_result<int>(ret);
+	return 0;
 }
 
 int sys_pipe(int *fds, int flags) {
@@ -520,7 +601,7 @@ void sys_yield() {
 
 int sys_clone(void *tcb, pid_t *pid_out, void *stack) {
 	unsigned long flags = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND
-		| CLONE_THREAD | CLONE_SYSVSEM | CLONE_SETTLS | CLONE_SETTLS
+		| CLONE_THREAD | CLONE_SYSVSEM | CLONE_SETTLS
 		| CLONE_PARENT_SETTID;
 
 #if defined(__riscv)
@@ -533,13 +614,31 @@ int sys_clone(void *tcb, pid_t *pid_out, void *stack) {
 	// TODO: We should change the sysdep so that we don't need to do this.
 	auto tp = reinterpret_cast<char *>(tcb) + sizeof(Tcb) - 0x10;
 	tcb = reinterpret_cast<void *>(tp);
+#elif defined(__i386__)
+	/* get the entry number, as we don't request a new one here */
+	uint32_t gs;
+	asm volatile("movw %%gs, %w0" : "=q"(gs));
+
+	auto user_desc = reinterpret_cast<struct user_desc *>(getAllocator().allocate(sizeof(struct user_desc)));
+
+	user_desc->entry_number = (gs & 0xffff) >> 3;
+	user_desc->base_addr = uintptr_t(tcb);
+	user_desc->limit = 0xfffff;
+	user_desc->seg_32bit = 1;
+	user_desc->contents = 0;
+	user_desc->read_exec_only = 0;
+	user_desc->limit_in_pages = 1;
+	user_desc->seg_not_present = 0;
+	user_desc->useable = 1;
+
+	tcb = reinterpret_cast<void *>(user_desc);
 #endif
 
 	auto ret = __mlibc_spawn_thread(flags, stack, pid_out, NULL, tcb);
 	if (ret < 0)
 		return ret;
 
-        return 0;
+	return 0;
 }
 
 extern "C" const char __mlibc_syscall_begin[1];
@@ -553,8 +652,10 @@ extern "C" const char __mlibc_syscall_end[1];
 int sys_before_cancellable_syscall(ucontext_t *uct) {
 #if defined(__x86_64__)
 	auto pc = reinterpret_cast<void*>(uct->uc_mcontext.gregs[REG_RIP]);
+#elif defined(__i386__)
+	auto pc = reinterpret_cast<void*>(uct->uc_mcontext.gregs[REG_EIP]);
 #elif defined(__riscv)
-	auto pc = reinterpret_cast<void*>(uct->uc_mcontext.sc_regs.pc);
+	auto pc = reinterpret_cast<void*>(uct->uc_mcontext.gregs[REG_PC]);
 #elif defined(__aarch64__)
 	auto pc = reinterpret_cast<void*>(uct->uc_mcontext.pc);
 #else
@@ -674,6 +775,14 @@ int sys_listen(int fd, int backlog) {
 	auto ret = do_syscall(SYS_listen, fd, backlog, 0, 0, 0, 0);
 	if (int e = sc_error(ret); e)
 		return e;
+	return 0;
+}
+
+int sys_shutdown(int sockfd, int how) {
+	auto ret = do_syscall(SYS_shutdown, sockfd, how);
+	if (int e = sc_error(ret); e) {
+		return e;
+	}
 	return 0;
 }
 
@@ -934,7 +1043,7 @@ int sys_eventfd_create(unsigned int initval, int flags, int *fd) {
 }
 
 int sys_signalfd_create(const sigset_t *masks, int flags, int *fd) {
-	auto ret = do_syscall(SYS_signalfd4, *fd, masks, sizeof(sigset_t), flags);
+	auto ret = do_syscall(SYS_signalfd4, *fd, masks, NSIG / 8, flags);
 	if (int e = sc_error(ret); e)
 		return e;
 	*fd = sc_int_result<int>(ret);
@@ -1399,6 +1508,29 @@ int sys_sysconf(int num, long *ret) {
 	return 0;
 }
 
+int sys_semget(key_t key, int n, int fl, int *id) {
+	auto ret = do_syscall(SYS_semget, key, n, fl);
+	if(int e = sc_error(ret); e)
+		return e;
+	*id = sc_int_result<int>(ret);
+	return 0;
+}
+
+int sys_semctl(int semid, int semnum, int cmd, void *semun, int *out) {
+	auto ret = do_syscall(SYS_semctl, semid, semnum, cmd | IPC_64, semun);
+	if(int e = sc_error(ret); e)
+		return e;
+	*out = sc_int_result<int>(ret);
+	return 0;
+}
+
+int sys_waitid(idtype_t idtype, id_t id, siginfo_t *info, int options) {
+	auto ret = do_syscall(SYS_waitid, idtype, id, info, options, 0);
+	if(int e = sc_error(ret); e)
+		return e;
+	return sc_int_result<int>(ret);
+}
+
 #endif // __MLIBC_POSIX_OPTION
 
 #if __MLIBC_LINUX_OPTION
@@ -1409,6 +1541,18 @@ int sys_reboot(int cmd) {
 	auto ret = do_syscall(SYS_reboot, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, cmd, nullptr);
 	if (int e = sc_error(ret); e)
 		return e;
+	return 0;
+}
+
+int sys_getifaddrs(struct ifaddrs **out) {
+	*out = nullptr;
+
+	NetlinkHelper nl;
+	bool link_ret = nl.send_request(RTM_GETLINK) && nl.recv(&getifaddrs_callback, out);
+	__ensure(link_ret);
+	bool addr_ret = nl.send_request(RTM_GETADDR) && nl.recv(&getifaddrs_callback, out);
+	__ensure(addr_ret);
+
 	return 0;
 }
 
@@ -1482,7 +1626,7 @@ void sys_exit(int status) {
 	__builtin_trap();
 }
 
-#endif // MLIBC_BUILDING_RTDL
+#endif // MLIBC_BUILDING_RTLD
 
 #define FUTEX_WAIT 0
 #define FUTEX_WAKE 1
@@ -1543,7 +1687,7 @@ int sys_mknodat(int dirfd, const char *path, int mode, int dev) {
 	return 0;
 }
 
-int sys_mkfifoat(int dirfd, const char *path, int mode) {
+int sys_mkfifoat(int dirfd, const char *path, mode_t mode) {
 	return sys_mknodat(dirfd, path, mode | S_IFIFO, 0);
 }
 
@@ -1621,14 +1765,14 @@ int sys_readlink(const char *path, void *buf, size_t bufsiz, ssize_t *len) {
 }
 
 int sys_getrlimit(int resource, struct rlimit *limit) {
-	auto ret = do_syscall(SYS_getrlimit, resource, limit);
+	auto ret = do_syscall(SYS_prlimit64, 0, resource, 0, limit);
 	if (int e = sc_error(ret); e)
 		return e;
 	return 0;
 }
 
 int sys_setrlimit(int resource, const struct rlimit *limit) {
-	auto ret = do_syscall(SYS_setrlimit, resource, limit);
+	auto ret = do_syscall(SYS_prlimit64, 0, resource, limit, 0);
 	if (int e = sc_error(ret); e)
 		return e;
 	return 0;
@@ -1685,7 +1829,7 @@ int sys_getpgid(pid_t pid, pid_t *out) {
 	return 0;
 }
 
-int sys_getgroups(size_t size, const gid_t *list, int *retval) {
+int sys_getgroups(size_t size, gid_t *list, int *retval) {
 	auto ret = do_syscall(SYS_getgroups, size, list);
 	if (int e = sc_error(ret); e)
 		return e;
@@ -1863,6 +2007,38 @@ int sys_personality(unsigned long persona, int *out) {
 
 	*out = sc_int_result<int>(ret);
 	return 0;
+}
+
+int sys_ioperm(unsigned long int from, unsigned long int num, int turn_on) {
+#if defined(SYS_ioperm)
+	auto ret = do_syscall(SYS_ioperm, from, num, turn_on);
+
+	if(int e = sc_error(ret); e) {
+		return e;
+	}
+
+	return 0;
+#else
+	(void) from;
+	(void) num;
+	(void) turn_on;
+	return ENOSYS;
+#endif
+}
+
+int sys_iopl(int level) {
+#if defined(SYS_iopl)
+	auto ret = do_syscall(SYS_iopl, level);
+
+	if(int e = sc_error(ret); e) {
+		return e;
+	}
+
+	return 0;
+#else
+	(void) level;
+	return ENOSYS;
+#endif
 }
 
 #endif // __MLIBC_GLIBC_OPTION

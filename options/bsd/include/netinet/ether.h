@@ -10,9 +10,10 @@ extern "C" {
 
 #ifndef __MLIBC_ABI_ONLY
 
-char *ether_ntoa_r(const struct ether_addr *p_a, char *x);
+char *ether_ntoa(const struct ether_addr *__addr);
+char *ether_ntoa_r(const struct ether_addr *__p_a, char *__x);
 
-struct ether_addr *ether_aton(const char *asc);
+struct ether_addr *ether_aton(const char *__asc);
 
 #endif /* !__MLIBC_ABI_ONLY */
 
@@ -20,4 +21,4 @@ struct ether_addr *ether_aton(const char *asc);
 }
 #endif
 
-#endif //_NETINET_ETHER_H
+#endif /*_NETINET_ETHER_H */

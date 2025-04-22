@@ -75,9 +75,20 @@
 #define SYS_RENAME 68
 #define SYS_MPROTECT 69
 #define SYS_SOCK_SEND 70
+#define SYS_TRACE 71
+#define SYS_SETPGID 72
+#define SYS_SETSID 73
+#define SYS_GETPGID 74
+#define SYS_SOCK_SHUTDOWN 75
+#define SYS_GETPEERNAME 76
+#define SYS_GETSOCKNAME 77
+#define SYS_DEBUG 78
+#define SYS_SETSOCKOPT 79
+#define SYS_GETSOCKOPT 80
+#define SYS_SYMLINK_AT 81
 
-// Invalid syscall used to trigger a log error in the kernel (as a hint)
-// so, that we can implement the syscall in the kernel.
+/* Invalid syscall used to trigger a log error in the kernel (as a hint) */
+/* so, that we can implement the syscall in the kernel. */
 #define UNIMPLEMENTED(FUNCTION_NAME)                                           \
     {                                                                          \
         sys_libc_log("Unimplemented syscall: " FUNCTION_NAME);                 \
@@ -166,15 +177,15 @@ static sc_word_t syscall6(int sc, sc_word_t arg1, sc_word_t arg2,
                  : "rcx", "r11", "memory");
     return ret;
 }
-} // extern "C"
+} /* extern "C" */
 
-// Cast to the argument type of the extern "C" functions.
+/* Cast to the argument type of the extern "C" functions. */
 __attribute__((__always_inline__)) inline sc_word_t sc_cast(long x) { return x; }
 __attribute__((__always_inline__)) inline sc_word_t sc_cast(const void *x) {
     return reinterpret_cast<sc_word_t>(x);
 }
 
-// C++ wrappers for the extern "C" functions.
+/* C++ wrappers for the extern "C" functions. */
 __attribute__((__always_inline__)) static inline long _syscall(int call) {
     return syscall0(call);
 }
@@ -217,4 +228,10 @@ __attribute__((__always_inline__)) static inline long syscall(sc_word_t call,
                                                           T... args) {
     return _syscall(call, sc_cast(args)...);
 }
-#endif // SYSCALL_H
+
+inline int sc_error(long ret) {
+    if (ret < 0)
+        return -ret;
+    return 0;
+}
+#endif /* SYSCALL_H */

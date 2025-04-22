@@ -3,11 +3,15 @@
 #define _NETINET_IN_H
 
 #include <stdint.h>
-#include <endian.h>
-#include <sys/socket.h> // struct sockaddr
+#include <sys/socket.h> /* struct sockaddr */
 #include <abi-bits/socket.h>
 #include <abi-bits/in.h>
 #include <arpa/inet.h>
+#include <mlibc-config.h>
+
+#if __MLIBC_GLIBC_OPTION
+	#include <endian.h>
+#endif /*__MLIBC_GLIBC_OPTION */
 
 #ifdef __cplusplus
 extern "C" {
@@ -18,10 +22,10 @@ extern "C" {
 extern const struct in6_addr in6addr_any;
 extern const struct in6_addr in6addr_loopback;
 
-uint32_t htonl(uint32_t);
-uint16_t htons(uint16_t);
-uint32_t ntohl(uint32_t);
-uint16_t ntohs(uint16_t);
+uint32_t htonl(uint32_t __x);
+uint16_t htons(uint16_t __x);
+uint32_t ntohl(uint32_t __x);
+uint16_t ntohs(uint16_t __x);
 
 #endif /* !__MLIBC_ABI_ONLY */
 
@@ -42,11 +46,11 @@ uint16_t ntohs(uint16_t);
 #define IN6_IS_ADDR_MULTICAST(a) (((const uint8_t *) (a))[0] == 0xff)
 #define IN6_IS_ADDR_LINKLOCAL(a) ({ \
     uint32_t *_a = (uint32_t *)(((struct in6_addr *) a)->s6_addr); \
-    _a[0] & htonl(0xffc00000) == htonl(0xfe800000); \
+    (_a[0] & htonl(0xffc00000)) == htonl(0xfe800000); \
 })
 #define IN6_IS_ADDR_SITELOCAL(a) ({ \
     uint32_t *_a = (uint32_t *)(((struct in6_addr *) a)->s6_addr); \
-    _a[0] & htonl(0xffc00000) == htonl(0xfec00000); \
+    (_a[0] & htonl(0xffc00000)) == htonl(0xfec00000); \
 })
 #define IN6_IS_ADDR_V4MAPPED(a) ({ \
     uint32_t *_a = (uint32_t *)(((struct in6_addr *) a)->s6_addr); \
@@ -56,7 +60,7 @@ uint16_t ntohs(uint16_t);
 })
 #define __ARE_4_BYTE_EQUAL(a, b) \
 	((a)[0] == (b)[0] && (a)[1] == (b)[1] && (a)[2] == (b)[2] && \
-	 (a)[3] == (b)[3] && (a)[4] == (b)[4])
+	 (a)[3] == (b)[3])
 #define IN6_ARE_ADDR_EQUAL(a, b) \
 	__ARE_4_BYTE_EQUAL((const uint32_t *)(a), (const uint32_t *)(b))
 
@@ -114,5 +118,5 @@ uint16_t ntohs(uint16_t);
 }
 #endif
 
-#endif // _NETINET_IN_H
+#endif /* _NETINET_IN_H */
 

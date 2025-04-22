@@ -1,11 +1,21 @@
 
-rtdl_sources += files(
+rtld_sources += files(
 	'generic/generic.cpp'
 )
 
 libc_sources += files(
 	'generic/entry.cpp',
-	'generic/generic.cpp'
+	'generic/ptrace.cpp',
+	'generic/generic.cpp',
+	'generic/mntent.cpp',
+	'generic/mount.cpp',
+	'generic/reboot.cpp',
+	'generic/pty.cpp',
+	'generic/thread.cpp',
+	'generic/mac.cpp',
+	'generic/sched2.cpp',
+	'generic/thread.S',
+	'generic/utmpx.cpp'
 )
 
 if not no_headers
@@ -20,6 +30,7 @@ if not no_headers
 		'include/abi-bits/reboot.h',
 		'include/abi-bits/resource.h',
 		'include/abi-bits/stat.h',
+		'include/abi-bits/statx.h',
 		'include/abi-bits/signal.h',
 		'include/abi-bits/socket.h',
 		'include/abi-bits/termios.h',
@@ -52,12 +63,35 @@ if not no_headers
 		'include/abi-bits/statvfs.h',
 		'include/abi-bits/ioctls.h',
 		'include/abi-bits/xattr.h',
-		subdir: 'abi-bits'
+		'include/abi-bits/msg.h',
+		subdir: 'abi-bits',
+		follow_symlinks: true
 	)
 	install_headers(
-		'include/sys/ironclad.h',
+		'include/sys/sched2.h',
+		'include/sys/ironclad_devices.h',
+		'include/sys/mac.h',
 		'include/sys/syscall.h',
+		'include/sys/reboot.h',
+		'include/sys/mount.h',
+		'include/sys/ptrace.h',
 		subdir: 'sys'
+	)
+
+	install_headers(
+		'include/asm/ioctls.h',
+		subdir: 'asm'
+	)
+
+	install_headers(
+		'include/linux/fb.h',
+		subdir: 'linux'
+	)
+
+	install_headers(
+		'include/mntent.h',
+		'include/pty.h',
+		'include/utmpx.h'
 	)
 endif
 
@@ -67,6 +101,24 @@ if not headers_only
 		command: c_compiler.cmd_array() + ['-c', '-o', '@OUTPUT@', '@INPUT@'],
 		input: 'crt-x86_64/crt0.S',
 		output: 'crt0.o',
+		install: true,
+		install_dir: get_option('libdir')
+	)
+
+	custom_target('crti',
+		build_by_default: true,
+		command: c_compiler.cmd_array() + ['-c', '-o', '@OUTPUT@', '@INPUT@'],
+		input: 'crt-x86_64/crti.S',
+		output: 'crti.o',
+		install: true,
+		install_dir: get_option('libdir')
+	)
+
+	custom_target('crtn',
+		build_by_default: true,
+		command: c_compiler.cmd_array() + ['-c', '-o', '@OUTPUT@', '@INPUT@'],
+		input: 'crt-x86_64/crtn.S',
+		output: 'crtn.o',
 		install: true,
 		install_dir: get_option('libdir')
 	)

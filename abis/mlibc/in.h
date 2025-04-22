@@ -4,6 +4,7 @@
 #include <bits/posix/in_addr_t.h>
 #include <bits/posix/in_port_t.h>
 #include <abi-bits/socket.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -165,4 +166,4 @@ struct group_source_req {
 #define IPV6_ADD_MEMBERSHIP  IPV6_JOIN_GROUP
 #define IPV6_DROP_MEMBERSHIP IPV6_LEAVE_GROUP
 
-#endif // _ABIBITS_IN_H
+#endif /* _ABIBITS_IN_H */

@@ -25,6 +25,7 @@ extern "C" {
 #define RLIMIT_MSGQUEUE 12
 #define RLIMIT_NICE 13
 #define RLIMIT_RTPRIO 14
+#define RLIMIT_RTTIME 15
 #define RLIMIT_NLIMITS 16
 
 struct rusage {
@@ -50,4 +51,4 @@ struct rusage {
 }
 #endif
 
-#endif // _ABIBITS_RESOURCE_H
+#endif /* _ABIBITS_RESOURCE_H */

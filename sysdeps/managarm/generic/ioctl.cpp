@@ -4,9 +4,15 @@
 #include <linux/input.h>
 #include <linux/kd.h>
 #include <linux/vt.h>
+#include <linux/usb/cdc-wdm.h>
 #include <sys/ioctl.h>
+#include <net/if.h>
+#include <net/if_arp.h>
+#include <netinet/in.h>
 
 #include <bits/ensure.h>
+#include <bragi/helpers-frigg.hpp>
+#include <frg/vector.hpp>
 #include <mlibc/all-sysdeps.hpp>
 #include <mlibc/allocator.hpp>
 #include <mlibc/debug.hpp>
@@ -17,14 +23,17 @@
 
 namespace mlibc {
 
+static constexpr bool logIoctls = false;
+
 int ioctl_drm(int fd, unsigned long request, void *arg, int *result, HelHandle handle);
 
 int sys_ioctl(int fd, unsigned long request, void *arg, int *result) {
-//	mlibc::infoLogger() << "mlibc: ioctl with"
-//			<< " type: 0x" << frg::hex_fmt(_IOC_TYPE(request))
-//			<< ", number: 0x" << frg::hex_fmt(_IOC_NR(request))
-//			<< " (raw request: " << frg::hex_fmt(request) << ")"
-//			<< " on fd " << fd << frg::endlog;
+	if(logIoctls)
+		mlibc::infoLogger() << "mlibc: ioctl with"
+				<< " type: 0x" << frg::hex_fmt(_IOC_TYPE(request))
+				<< ", number: 0x" << frg::hex_fmt(_IOC_NR(request))
+				<< " (raw request: " << frg::hex_fmt(request) << ")"
+				<< " on fd " << fd << frg::endlog;
 
 	SignalGuard sguard;
 	auto handle = getHandleForFd(fd);
@@ -34,6 +43,45 @@ int sys_ioctl(int fd, unsigned long request, void *arg, int *result) {
 	if(_IOC_TYPE(request) == 'd') {
 		return ioctl_drm(fd, request, arg, result, handle);
 	}
+
+	auto handle_siocgif = [&arg, &request, &result]
+			(void (*req_setup)(managarm::fs::IfreqRequest<MemoryAllocator> &req, struct ifreq *ifr),
+			int (*resp_parse)(managarm::fs::IfreqReply<MemoryAllocator> &resp, struct ifreq *ifr)) -> int {
+		if(!arg)
+			return EFAULT;
+
+		auto ifr = reinterpret_cast<struct ifreq *>(arg);
+
+		managarm::posix::NetserverRequest<MemoryAllocator> token_req(getSysdepsAllocator());
+		managarm::fs::IfreqRequest<MemoryAllocator> req(getSysdepsAllocator());
+		req.set_command(request);
+
+		req_setup(req, ifr);
+
+		auto [offer, send_token_req, send_req, recv_resp] =
+		exchangeMsgsSync(
+			getPosixLane(),
+			helix_ng::offer(
+				helix_ng::sendBragiHeadOnly(token_req, getSysdepsAllocator()),
+				helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+				helix_ng::recvInline()
+			)
+		);
+
+		HEL_CHECK(offer.error());
+		HEL_CHECK(send_token_req.error());
+		HEL_CHECK(send_req.error());
+		HEL_CHECK(recv_resp.error());
+
+		managarm::fs::IfreqReply<MemoryAllocator> resp(getSysdepsAllocator());
+		resp.ParseFromArray(recv_resp.data(), recv_resp.length());
+
+		int ret = resp_parse(resp, ifr);
+
+		if(result)
+			*result = 0;
+		return ret;
+	};
 
 	managarm::fs::IoctlRequest<MemoryAllocator> ioctl_req(getSysdepsAllocator());
 
@@ -167,7 +215,8 @@ int sys_ioctl(int fd, unsigned long request, void *arg, int *result) {
 		managarm::fs::GenericIoctlReply<MemoryAllocator> resp(getSysdepsAllocator());
 		resp.ParseFromArray(recv_resp.data(), recv_resp.length());
 		__ensure(resp.error() == managarm::fs::Errors::SUCCESS);
-		*result = resp.result();
+		if(result)
+			*result = resp.result();
 		return 0;
 	}
 	case TIOCSCTTY: {
@@ -222,6 +271,8 @@ int sys_ioctl(int fd, unsigned long request, void *arg, int *result) {
 		if(send_req.error() == kHelErrDismissed)
 			return EINVAL;
 		HEL_CHECK(send_req.error());
+		if(recv_resp.error() == kHelErrDismissed)
+			return EINVAL;
 		HEL_CHECK(recv_resp.error());
 
 		managarm::fs::GenericIoctlReply<MemoryAllocator> resp(getSysdepsAllocator());
@@ -319,6 +370,10 @@ int sys_ioctl(int fd, unsigned long request, void *arg, int *result) {
 		if(send_req.error())
 			return EINVAL;
 		HEL_CHECK(send_req.error());
+		if(imbue_creds.error()) {
+			infoLogger() << "mlibc: TIOCGPGRP used on unexpected socket, returning EINVAL (FIXME)" << frg::endlog;
+			return EINVAL;
+		}
 		HEL_CHECK(imbue_creds.error());
 		HEL_CHECK(recv_resp.error());
 
@@ -337,7 +392,7 @@ int sys_ioctl(int fd, unsigned long request, void *arg, int *result) {
 
 		managarm::fs::GenericIoctlRequest<MemoryAllocator> req(getSysdepsAllocator());
 		req.set_command(request);
-		req.set_pgid((long int)param);
+		req.set_pgid(*param);
 
 		frg::string<MemoryAllocator> ser(getSysdepsAllocator());
 		req.SerializeToString(&ser);
@@ -690,6 +745,193 @@ int sys_ioctl(int fd, unsigned long request, void *arg, int *result) {
 		mlibc::infoLogger() << "\e[35mmlibc: TIOCSPTLCK is a no-op" << frg::endlog;
 		if(result)
 			*result = 0;
+		return 0;
+	} else if(request == SIOCGIFNAME) {
+		return handle_siocgif([](auto req, auto ifr) {
+			req.set_index(ifr->ifr_ifindex);
+		}, [](auto resp, auto ifr) {
+			if(resp.error() != managarm::fs::Errors::SUCCESS)
+				return EINVAL;
+			strncpy(ifr->ifr_name, resp.name().data(), IFNAMSIZ);
+			return 0;
+		});
+	}else if(request == SIOCGIFCONF) {
+		if(!arg)
+			return EFAULT;
+
+		auto ifc = reinterpret_cast<struct ifconf *>(arg);
+
+		managarm::posix::NetserverRequest<MemoryAllocator> token_req(getSysdepsAllocator());
+		managarm::fs::IfreqRequest<MemoryAllocator> req(getSysdepsAllocator());
+		req.set_command(request);
+
+		auto [offer, send_token_req, send_req, recv_resp] =
+		exchangeMsgsSync(
+			getPosixLane(),
+			helix_ng::offer(
+				helix_ng::want_lane,
+				helix_ng::sendBragiHeadOnly(token_req, getSysdepsAllocator()),
+				helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+				helix_ng::recvInline()
+			)
+		);
+
+		auto conversation = offer.descriptor();
+
+		HEL_CHECK(offer.error());
+		HEL_CHECK(send_token_req.error());
+		HEL_CHECK(send_req.error());
+		HEL_CHECK(recv_resp.error());
+
+		auto preamble = bragi::read_preamble(recv_resp);
+		__ensure(!preamble.error());
+
+		frg::vector<uint8_t, MemoryAllocator> tailBuffer{getSysdepsAllocator()};
+		tailBuffer.resize(preamble.tail_size());
+		auto [recv_tail] = exchangeMsgsSync(
+			conversation.getHandle(),
+			helix_ng::recvBuffer(tailBuffer.data(), tailBuffer.size())
+		);
+
+		HEL_CHECK(recv_tail.error());
+
+		auto resp = *bragi::parse_head_tail<managarm::fs::IfconfReply>(recv_resp, tailBuffer, getSysdepsAllocator());
+		recv_resp.reset();
+
+		__ensure(resp.error() == managarm::fs::Errors::SUCCESS);
+
+		if(ifc->ifc_buf == nullptr) {
+			ifc->ifc_len = int(resp.ifconf_size() * sizeof(struct ifreq));
+			return 0;
+		}
+
+		ifc->ifc_len = frg::min(int(resp.ifconf_size() * sizeof(struct ifreq)), ifc->ifc_len);
+
+		for(size_t i = 0; i < frg::min(resp.ifconf_size() , ifc->ifc_len / sizeof(struct ifreq)); ++i) {
+			auto &conf = resp.ifconf()[i];
+
+			sockaddr_in addr{};
+			addr.sin_family = AF_INET;
+			addr.sin_addr.s_addr = htonl(conf.ip4());
+
+			ifreq *req = &ifc->ifc_req[i];
+			strncpy(req->ifr_name, conf.name().data(), IFNAMSIZ);
+			memcpy(&req->ifr_addr, &addr, sizeof(addr));
+		}
+
+		if(result)
+			*result = 0;
+		return 0;
+	}else if(request == SIOCGIFNETMASK) {
+		return handle_siocgif([](auto req, auto ifr) {
+			req.set_name(frg::string<MemoryAllocator>{ifr->ifr_name, getSysdepsAllocator()});
+		}, [](auto resp, auto ifr) {
+			if(resp.error() != managarm::fs::Errors::SUCCESS)
+				return EINVAL;
+
+			sockaddr_in addr{};
+			addr.sin_family = AF_INET;
+			addr.sin_addr = { htonl(resp.ip4_netmask()) };
+			memcpy(&ifr->ifr_netmask, &addr, sizeof(addr));
+
+			return 0;
+		});
+	}else if(request == SIOCGIFINDEX) {
+		return handle_siocgif([](auto req, auto ifr) {
+			req.set_name(frg::string<MemoryAllocator>{ifr->ifr_name, getSysdepsAllocator()});
+		}, [](auto resp, auto ifr) {
+			if(resp.error() != managarm::fs::Errors::SUCCESS)
+				return EINVAL;
+			ifr->ifr_ifindex = resp.index();
+			return 0;
+		});
+	}else if(request == SIOCGIFFLAGS) {
+		return handle_siocgif([](auto req, auto ifr) {
+			req.set_name(frg::string<MemoryAllocator>{ifr->ifr_name, getSysdepsAllocator()});
+		}, [](auto resp, auto ifr) {
+			if(resp.error() != managarm::fs::Errors::SUCCESS)
+				return EINVAL;
+			ifr->ifr_flags = resp.flags();
+			return 0;
+		});
+	}else if(request == SIOCGIFADDR) {
+		return handle_siocgif([](auto req, auto ifr) {
+			req.set_name(frg::string<MemoryAllocator>{ifr->ifr_name, getSysdepsAllocator()});
+		}, [](auto resp, auto ifr) {
+			if(resp.error() != managarm::fs::Errors::SUCCESS)
+				return EINVAL;
+
+			sockaddr_in addr{};
+			addr.sin_family = AF_INET;
+			addr.sin_addr = { htonl(resp.ip4_addr()) };
+			memcpy(&ifr->ifr_addr, &addr, sizeof(addr));
+
+			return 0;
+		});
+	}else if(request == SIOCGIFMTU) {
+		return handle_siocgif([](auto req, auto ifr) {
+			req.set_name(frg::string<MemoryAllocator>{ifr->ifr_name, getSysdepsAllocator()});
+		}, [](auto resp, auto ifr) {
+			if(resp.error() != managarm::fs::Errors::SUCCESS)
+				return EINVAL;
+
+			ifr->ifr_mtu = resp.mtu();
+
+			return 0;
+		});
+	}else if(request == SIOCGIFBRDADDR) {
+		return handle_siocgif([](auto req, auto ifr) {
+			req.set_name(frg::string<MemoryAllocator>{ifr->ifr_name, getSysdepsAllocator()});
+		}, [](auto resp, auto ifr) {
+			if(resp.error() != managarm::fs::Errors::SUCCESS)
+				return EINVAL;
+
+			sockaddr_in addr{};
+			addr.sin_family = AF_INET;
+			addr.sin_addr = { htonl(resp.ip4_broadcast_addr()) };
+			memcpy(&ifr->ifr_broadaddr, &addr, sizeof(addr));
+
+			return 0;
+		});
+	} else if(request == SIOCGIFHWADDR) {
+		return handle_siocgif([](auto req, auto ifr) {
+			req.set_name(frg::string<MemoryAllocator>{ifr->ifr_name, getSysdepsAllocator()});
+		}, [](auto resp, auto ifr) {
+			if(resp.error() != managarm::fs::Errors::SUCCESS)
+				return EINVAL;
+
+			sockaddr addr{};
+			addr.sa_family = ARPHRD_ETHER;
+			memcpy(addr.sa_data, resp.mac().data(), 6);
+			memcpy(&ifr->ifr_hwaddr, &addr, sizeof(addr));
+
+			return 0;
+		});
+	} else if(request == IOCTL_WDM_MAX_COMMAND) {
+		auto param = reinterpret_cast<int *>(arg);
+
+		managarm::fs::GenericIoctlRequest<MemoryAllocator> req(getSysdepsAllocator());
+		req.set_command(request);
+
+		auto [offer, send_ioctl_req, send_req, recv_resp] = exchangeMsgsSync(
+			handle,
+			helix_ng::offer(
+				helix_ng::sendBragiHeadOnly(ioctl_req, getSysdepsAllocator()),
+				helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+				helix_ng::recvInline()
+			)
+		);
+
+		HEL_CHECK(offer.error());
+		HEL_CHECK(send_ioctl_req.error());
+		HEL_CHECK(send_req.error());
+		HEL_CHECK(recv_resp.error());
+
+		managarm::fs::GenericIoctlReply<MemoryAllocator> resp(getSysdepsAllocator());
+		resp.ParseFromArray(recv_resp.data(), recv_resp.length());
+		__ensure(resp.error() == managarm::fs::Errors::SUCCESS);
+		*result = resp.result();
+		*param = resp.size();
 		return 0;
 	}
 

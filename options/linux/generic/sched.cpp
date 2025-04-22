@@ -3,6 +3,7 @@
 #include <sched.h>
 
 #include <mlibc/linux-sysdeps.hpp>
+#include <mlibc/posix-sysdeps.hpp>
 
 int sched_getcpu(void) {
 	MLIBC_CHECK_OR_ENOSYS(mlibc::sys_getcpu, -1);
@@ -11,7 +12,7 @@ int sched_getcpu(void) {
 		errno = e;
 		return -1;
 	}
-	return 0;
+	return cpu;
 }
 
 int setns(int, int) {

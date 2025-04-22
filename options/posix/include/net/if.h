@@ -78,12 +78,14 @@ struct ifconf {
 
 #ifndef __MLIBC_ABI_ONLY
 
-void if_freenameindex(struct if_nameindex *);
-char *if_indextoname(unsigned int, char *);
+void if_freenameindex(struct if_nameindex *__index);
+char *if_indextoname(unsigned int __index, char *__name);
 struct if_nameindex *if_nameindex(void);
-unsigned int if_nametoindex(const char *);
+unsigned int if_nametoindex(const char *__name);
 
 #endif /* !__MLIBC_ABI_ONLY */
+
+#define IFHWADDRLEN 6
 
 #define IFF_UP 0x1
 #define IFF_BROADCAST 0x2
@@ -111,6 +113,6 @@ unsigned int if_nametoindex(const char *);
 }
 #endif
 
-#endif // _NET_IF_H
+#endif /* _NET_IF_H */
 
 
