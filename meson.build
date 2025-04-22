@@ -159,7 +159,7 @@ elif host_machine.system() == 'lemon'
 elif host_machine.system() == 'unified'
 	rtdl_include_dirs += include_directories('sysdeps/unified/include')
 	libc_include_dirs += include_directories('sysdeps/unified/include')
-	subdir('sysdeps/lemon')
+	subdir('sysdeps/unified')
 elif host_machine.system() == 'dripos'
 	disable_linux_option = true
 	rtdl_include_dirs += include_directories('sysdeps/dripos/include')

@@ -21,7 +21,7 @@ libc_sources += files(
 	'generic/thread.cpp'
 )
 
-if not mlibc_no_headers
+if not no_headers
 	install_headers(
 		'include/abi-bits/auxv.h',
 		'include/abi-bits/seek-whence.h',
