@@ -26,7 +26,7 @@ libc_deps = [ ]
 rtdl_deps = [ ]
 
 headers_only = get_option('headers_only')
-no_headers = get_option('no_headers')
+mlibc_no_headers = get_option('mlibc_no_headers')
 library_type = get_option('default_library')
 build_tests = get_option('build_tests')
 build_tests_host_libc = get_option('build_tests_host_libc')
@@ -364,7 +364,7 @@ configure_file(input: 'internal-config.h.in',
 configure_file(input: 'mlibc-config.h.in',
 	output: 'mlibc-config.h',
 	configuration: mlibc_conf,
-	install: not no_headers,
+	install: not mlibc_no_headers,
 	install_dir: get_option('includedir'))
 
 internal_sources = [
@@ -390,7 +390,7 @@ internal_sources = [
 	'options/internal' / host_machine.cpu_family() / 'fenv.S',
 ]
 
-if not no_headers
+if not mlibc_no_headers
 	install_headers(
 		'options/internal/include/stdint.h'
 	)
