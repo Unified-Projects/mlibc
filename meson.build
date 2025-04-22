@@ -2,28 +2,28 @@ project('mlibc', default_options: ['warning_level=2', 'c_std=gnu11', 'cpp_std=c+
 
 fs = import('fs')
 
-rtld_include_dirs = [
+rtdl_include_dirs = [
 	include_directories('options/internal/include'),
 	include_directories('options/internal' / host_machine.cpu_family() + '-include'),
-	include_directories('options/rtld' / host_machine.cpu_family()),
-	include_directories('options/rtld/include'),
+	include_directories('options/rtdl' / host_machine.cpu_family()),
+	include_directories('options/rtdl/include'),
 ]
 libc_include_dirs = [
 	include_directories('options/internal/include'),
 	include_directories('options/elf/include'),
 	include_directories('options/lsb/include'),
-	include_directories('options/rtld/include'),
-	include_directories('options/rtld' / host_machine.cpu_family()),
+	include_directories('options/rtdl/include'),
+	include_directories('options/rtdl' / host_machine.cpu_family()),
 	include_directories('options/internal' / host_machine.cpu_family() + '-include')
 ]
 
-rtld_sources = [ ]
-rtld_dso_sources = [ ]
+rtdl_sources = [ ]
+rtdl_dso_sources = [ ]
 libc_sources = [ ]
 libc_sublibs = [ ]
 
 libc_deps = [ ]
-rtld_deps = [ ]
+rtdl_deps = [ ]
 
 headers_only = get_option('headers_only')
 no_headers = get_option('no_headers')
@@ -50,7 +50,7 @@ if not headers_only
 		fallback: ['freestnd-c-hdrs', 'freestnd_c_hdrs_dep'],
 	)
 	libc_deps += freestnd_c_hdrs_dep
-	rtld_deps += freestnd_c_hdrs_dep
+	rtdl_deps += freestnd_c_hdrs_dep
 
 	freestnd_cxx_hdrs_dep = dependency(
 		'freestnd-cxx-hdrs-' + host_machine.cpu_family(),
@@ -58,7 +58,7 @@ if not headers_only
 		fallback: ['freestnd-cxx-hdrs', 'freestnd_cxx_hdrs_dep'],
 	)
 	libc_deps += freestnd_cxx_hdrs_dep
-	rtld_deps += freestnd_cxx_hdrs_dep
+	rtdl_deps += freestnd_cxx_hdrs_dep
 
 	frigg_dep = dependency(
 		'frigg',
@@ -69,7 +69,7 @@ if not headers_only
 		fallback: ['frigg', 'frigg_dep'],
 	)
 	libc_deps += frigg_dep
-	rtld_deps += frigg_dep
+	rtdl_deps += frigg_dep
 
 	add_project_arguments('-Wno-unused-function', '-D__MLIBC_BUILDING_MLIBC', language: ['c', 'cpp'])
 	add_project_arguments('-nostdinc', '-fno-builtin', '-ffreestanding', language: ['c', 'cpp'])
@@ -104,11 +104,11 @@ if not headers_only
 		endif
 
 		if c_compiler.get_id() == 'gcc' and fs.exists(ccdir / 'include-fixed')
-			rtld_include_dirs += include_directories(ccdir / 'include-fixed')
+			rtdl_include_dirs += include_directories(ccdir / 'include-fixed')
 			libc_include_dirs += include_directories(ccdir / 'include-fixed')
 		endif
 
-		rtld_include_dirs += include_directories(ccdir / 'include')
+		rtdl_include_dirs += include_directories(ccdir / 'include')
 		libc_include_dirs += include_directories(ccdir / 'include')
 	endif
 
@@ -160,7 +160,7 @@ if not headers_only
 			endif
 		endforeach
 
-		rtld_include_dirs += cplusplus_include_path
+		rtdl_include_dirs += cplusplus_include_path
 		libc_include_dirs += cplusplus_include_path
 	endif
 endif
@@ -196,14 +196,14 @@ internal_conf.set10('MLIBC_DEBUG_ALLOCATOR', get_option('debug_allocator'))
 # Configuration based on sysdeps.
 #----------------------------------------------------------------------------------------
 
-rtld_include_dirs += include_directories('sysdeps/generic-helpers/include')
+rtdl_include_dirs += include_directories('sysdeps/generic-helpers/include')
 libc_include_dirs += include_directories('sysdeps/generic-helpers/include')
 
 # Process sysdeps first, as sysdeps might want to disable unsupported options.
 provides_bits_syscall_h = false
 if host_machine.system() == 'linux'
 	provides_bits_syscall_h = true
-	rtld_include_dirs += include_directories('sysdeps/linux/include')
+	rtdl_include_dirs += include_directories('sysdeps/linux/include')
 	libc_include_dirs += include_directories('sysdeps/linux/include')
 
 	if not headers_only
@@ -215,7 +215,7 @@ if host_machine.system() == 'linux'
 			error('linux_kernel_headers is not set to a valid path')
 		endif
 
-		rtld_include_dirs += include_directories(get_option('linux_kernel_headers'))
+		rtdl_include_dirs += include_directories(get_option('linux_kernel_headers'))
 		libc_include_dirs += include_directories(get_option('linux_kernel_headers'))
 	endif
 
@@ -223,53 +223,53 @@ if host_machine.system() == 'linux'
 	internal_conf.set10('MLIBC_MMAP_ALLOCATE_DSO', true)
 	subdir('sysdeps/linux')
 elif host_machine.system() == 'aero'
-	rtld_include_dirs += include_directories('sysdeps/aero/include')
+	rtdl_include_dirs += include_directories('sysdeps/aero/include')
 	libc_include_dirs += include_directories('sysdeps/aero/include')
 	internal_conf.set10('MLIBC_MAP_DSO_SEGMENTS', true)
 	internal_conf.set10('MLIBC_MAP_FILE_WINDOWS', true)
 	subdir('sysdeps/aero')
 elif host_machine.system() == 'managarm'
 	# TODO: Adopt the include_directories() commands from the managarm meson.build.
-	rtld_include_dirs += include_directories('sysdeps/managarm/include')
+	rtdl_include_dirs += include_directories('sysdeps/managarm/include')
 	libc_include_dirs += include_directories('sysdeps/managarm/include')
 	internal_conf.set10('MLIBC_MAP_DSO_SEGMENTS', true)
 	internal_conf.set10('MLIBC_MMAP_ALLOCATE_DSO', true)
 	internal_conf.set10('MLIBC_MAP_FILE_WINDOWS', true)
 	subdir('sysdeps/managarm')
 elif host_machine.system() == 'ironclad'
-	rtld_include_dirs += include_directories('sysdeps/ironclad/include')
+	rtdl_include_dirs += include_directories('sysdeps/ironclad/include')
 	libc_include_dirs += include_directories('sysdeps/ironclad/include')
 	subdir('sysdeps/ironclad')
 elif host_machine.system() == 'keyronex'
-	rtld_include_dirs += include_directories('sysdeps/keyronex/include')
+	rtdl_include_dirs += include_directories('sysdeps/keyronex/include')
 	libc_include_dirs += include_directories('sysdeps/keyronex/include')
 	internal_conf.set10('MLIBC_MAP_DSO_SEGMENTS', true)
 	internal_conf.set10('MLIBC_MAP_FILE_WINDOWS', true)
 	subdir('sysdeps/keyronex')
 elif host_machine.system() == 'vinix'
-	rtld_include_dirs += include_directories('sysdeps/vinix/include')
+	rtdl_include_dirs += include_directories('sysdeps/vinix/include')
 	libc_include_dirs += include_directories('sysdeps/vinix/include')
 	subdir('sysdeps/vinix')
 elif host_machine.system() == 'unified'
-	rtld_include_dirs += include_directories('sysdeps/unified/include')
+	rtdl_include_dirs += include_directories('sysdeps/unified/include')
 	libc_include_dirs += include_directories('sysdeps/unified/include')
 	subdir('sysdeps/unified')
 elif host_machine.system() == 'dripos'
-	rtld_include_dirs += include_directories('sysdeps/dripos/include')
+	rtdl_include_dirs += include_directories('sysdeps/dripos/include')
 	libc_include_dirs += include_directories('sysdeps/dripos/include')
 	subdir('sysdeps/dripos')
 elif host_machine.system() == 'astral'
-	rtld_include_dirs += include_directories('sysdeps/astral/include')
+	rtdl_include_dirs += include_directories('sysdeps/astral/include')
 	libc_include_dirs += include_directories('sysdeps/astral/include')
 	internal_conf.set10('MLIBC_MAP_DSO_SEGMENTS', true)
 	internal_conf.set10('MLIBC_MAP_FILE_WINDOWS', true)
 	subdir('sysdeps/astral')
 elif host_machine.system() == 'menix'
-	rtld_include_dirs += include_directories('sysdeps/menix/include')
+	rtdl_include_dirs += include_directories('sysdeps/menix/include')
 	libc_include_dirs += include_directories('sysdeps/menix/include')
 	subdir('sysdeps/menix')
 elif host_machine.system() == 'nyaux'
-	rtld_include_dirs += include_directories('sysdeps/nyaux/include')
+	rtdl_include_dirs += include_directories('sysdeps/nyaux/include')
 	libc_include_dirs += include_directories('sysdeps/nyaux/include')
 	subdir('sysdeps/nyaux')
 else
@@ -291,11 +291,11 @@ mlibc_conf.set10('__MLIBC_GLIBC_OPTION', glibc_option)
 mlibc_conf.set10('__MLIBC_BSD_OPTION', bsd_option)
 mlibc_conf.set10('__MLIBC_SYSDEP_HAS_BITS_SYSCALL_H', provides_bits_syscall_h)
 
-rtld_include_dirs += include_directories('options/ansi/include')
+rtdl_include_dirs += include_directories('options/ansi/include')
 libc_include_dirs += include_directories('options/ansi/include')
 
 if posix_option
-	rtld_include_dirs += include_directories('options/posix/include')
+	rtdl_include_dirs += include_directories('options/posix/include')
 	libc_include_dirs += include_directories('options/posix/include')
 endif
 
@@ -332,26 +332,26 @@ if linux_option
 		endforeach
 	endif
 
-	rtld_include_dirs += include_directories('options/linux/include')
+	rtdl_include_dirs += include_directories('options/linux/include')
 	libc_include_dirs += include_directories('options/linux/include')
 
 	linux_kernel_dep = declare_dependency(include_directories: include_directories(get_option('linux_kernel_headers')))
 
 	libc_deps += linux_kernel_dep
-	rtld_deps += linux_kernel_dep
+	rtdl_deps += linux_kernel_dep
 endif
 
 if glibc_option
-	rtld_include_dirs += include_directories('options/glibc/include')
+	rtdl_include_dirs += include_directories('options/glibc/include')
 	libc_include_dirs += include_directories('options/glibc/include')
 endif
 
 if bsd_option
-	rtld_include_dirs += include_directories('options/bsd/include')
+	rtdl_include_dirs += include_directories('options/bsd/include')
 	libc_include_dirs += include_directories('options/bsd/include')
 endif
 
-rtld_include_dirs += include_directories('options/elf/include')
+rtdl_include_dirs += include_directories('options/elf/include')
 libc_include_dirs += include_directories('options/elf/include')
 libc_include_dirs += include_directories('.')
 
@@ -421,7 +421,7 @@ if not no_headers
 	)
 endif
 
-rtld_sources += [
+rtdl_sources += [
 	'options/internal/gcc/stack_protector.cpp',
 	'options/internal/gcc/guard-abi.cpp',
 	'options/internal/generic/allocator.cpp',
@@ -431,12 +431,12 @@ rtld_sources += [
 	'options/internal/generic/inline-emitter.cpp',
 	'options/internal/generic/frigg.cpp',
 	'options/internal/generic/ubsan.cpp',
-	'options/rtld/generic/main.cpp',
-	'options/rtld/generic/linker.cpp',
-	'options/rtld' / host_machine.cpu_family() / 'runtime.S'
+	'options/rtdl/generic/main.cpp',
+	'options/rtdl/generic/linker.cpp',
+	'options/rtdl' / host_machine.cpu_family() / 'runtime.S'
 ]
 
-rtld_dso_sources += ['options/rtld' / host_machine.cpu_family() / 'entry.S']
+rtdl_dso_sources += ['options/rtdl' / host_machine.cpu_family() / 'entry.S']
 
 subdir('options/elf')
 subdir('options/ansi')
@@ -473,7 +473,7 @@ if not headers_only
 		'-fvisibility=hidden',
 		'-fvisibility-inlines-hidden',
 		'-fno-stack-protector',
-		'-DMLIBC_BUILDING_RTLD',
+		'-DMLIBC_BUILDING_rtdl',
 		'-Wno-extern-c-compat',
 		'-Wno-unknown-pragmas',
 	]
@@ -501,11 +501,11 @@ if not headers_only
 			'-DMLIBC_STATIC_BUILD',
 			'-DFRIGG_HAVE_LIBC',
 		]
-		ld_static_lib = static_library('ld', rtld_sources,
+		ld_static_lib = static_library('ld', rtdl_sources,
 			name_prefix: '',
 			cpp_args: ld_cpp_args + static_cpp_args,
-			include_directories: rtld_include_dirs,
-			dependencies: rtld_deps + rtlib_deps,
+			include_directories: rtdl_include_dirs,
+			dependencies: rtdl_deps + rtlib_deps,
 			install: false
 		)
 		libc_static = static_library('c', libc_all_sources,
@@ -518,11 +518,11 @@ if not headers_only
 		)
 	endif
 	if library_type in ['shared', 'both']
-		ld_shared_lib = shared_library('ld', rtld_sources + rtld_dso_sources,
+		ld_shared_lib = shared_library('ld', rtdl_sources + rtdl_dso_sources,
 			name_prefix: '',
 			cpp_args: ld_cpp_args,
-			include_directories: rtld_include_dirs,
-			dependencies: rtld_deps + rtlib_deps,
+			include_directories: rtdl_include_dirs,
+			dependencies: rtdl_deps + rtlib_deps,
 			install: true
 		)
 		hide_everything_ld = (meson.current_source_dir()
