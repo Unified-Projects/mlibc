@@ -1,9 +1,3 @@
-sysdep_supported_options = {
-	'posix': true,
-	'linux': true,
-	'glibc': true,
-	'bsd': true,
-}
 
 rtdl_sources += files(
 	'generic/filesystem.cpp',
@@ -32,7 +26,6 @@ if not no_headers
 		'include/abi-bits/resource.h',
 		'include/abi-bits/signal.h',
 		'include/abi-bits/stat.h',
-		'include/abi-bits/statx.h',
 		'include/abi-bits/socket.h',
 		'include/abi-bits/termios.h',
 		'include/abi-bits/time.h',
@@ -55,7 +48,6 @@ if not no_headers
 		'include/abi-bits/packet.h',
 		'include/abi-bits/inotify.h',
 		'include/abi-bits/clockid_t.h',
-		'include/abi-bits/ipc.h',
 		'include/abi-bits/shm.h',
 		'include/abi-bits/mqueue.h',
 		'include/abi-bits/suseconds_t.h',
@@ -66,13 +58,7 @@ if not no_headers
 		'include/abi-bits/statvfs.h',
 		'include/abi-bits/ioctls.h',
 		'include/abi-bits/xattr.h',
-		'include/abi-bits/msg.h',
-		'include/abi-bits/random.h',
-		'include/abi-bits/rlim_t.h',
-		'include/abi-bits/sigval.h',
-		'include/abi-bits/sigevent.h',
-		subdir: 'abi-bits',
-		follow_symlinks: true
+		subdir: 'abi-bits'
 	)
 	install_headers(
 		'include/unified/syscall.h',
