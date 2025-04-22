@@ -1,4 +1,4 @@
-project('mlibc', default_options: ['warning_level=2', 'c_std=gnu11', 'cpp_std=c++20', 'c_args=-D_GNU_SOURCE','cpp_args=-D_GNU_SOURCE'])
+project('mlibc', default_options: ['warning_level=2', 'c_std=gnu11', 'cpp_std=gnuc++20'])
 
 fs = import('fs')
 
