@@ -1,4 +1,4 @@
-project('mlibc', default_options: ['warning_level=2', 'c_std=gnu11', 'cpp_std=c++20'])
+project('mlibc', default_options: ['warning_level=2', 'c_std=gnu11', 'cpp_std=c++20', 'c_args=-D_GNU_SOURCE','cpp_args=-D_GNU_SOURCE'])
 
 fs = import('fs')
 
@@ -448,7 +448,7 @@ if not headers_only
 	if not disable_libgcc_dependency
 		libgcc = meson.get_compiler('c').find_library('gcc', required: false)
 
-		compiler_rt_name = 'libclang_rt.builtins-' + host_machine.cpu_family()
+		compiler_rt_name = 'libclang_rt.-builtins' + host_machine.cpu_family()
 		compiler_rt = meson.get_compiler('c').find_library(compiler_rt_name, required: false)
 
 		if not compiler_rt.found()
