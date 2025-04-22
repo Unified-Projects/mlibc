@@ -111,4 +111,13 @@
 #define ENOTUNIQ 1105
 #define ERESTART 1106
 #define EUSERS 1107
+#define ECHRNG 1108
+#define ELIBBAD 1109
+#define EL2HLT 1110
+#define EL3HLT 1111
+#define EKEYEXPIRED 1112
+#define ECOMM 1113
+#define EBADE 1114
+#define EHWPOISON 1115
+#define EBADRQC 1116
 #endif // _ABIBITS_ERRNO_H

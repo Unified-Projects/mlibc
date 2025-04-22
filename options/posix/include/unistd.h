@@ -7,16 +7,16 @@
 #include <bits/size_t.h>
 #include <bits/ssize_t.h>
 #include <bits/off_t.h>
+#include <bits/types.h>
 #include <abi-bits/access.h>
 #include <abi-bits/uid_t.h>
 #include <abi-bits/gid_t.h>
 #include <abi-bits/pid_t.h>
+#include <abi-bits/seek-whence.h>
 
-// Some cross compilers may erroneously have __linux__ set.
-// Work around this by checking __has_include.
-#if defined(__linux__) && __has_include(<bits/syscall.h>)
+#if __MLIBC_SYSDEP_HAS_BITS_SYSCALL_H && __MLIBC_LINUX_OPTION
 #include <bits/syscall.h>
-#endif
+#endif /* __MLIBC_SYSDEP_HAS_BITS_SYSCALL_H && __MLIBC_LINUX_OPTION */
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,7 +36,7 @@ extern "C" {
 #define _POSIX_THREAD_SAFE_FUNCTIONS _POSIX_VERSION
 #define _POSIX_MONOTONIC_CLOCK 0
 
-#ifdef __MLIBC_CRYPT_OPTION
+#if __MLIBC_CRYPT_OPTION
 #define _XOPEN_CRYPT 1
 #endif
 
@@ -104,6 +104,9 @@ extern "C" {
 #define _PC_NO_TRUNC		7
 #define _PC_VDISABLE		8
 
+#define _PC_FILESIZEBITS 9
+#define _PC_SYMLINK_MAX 10
+
 // MISSING: remaining _SC_macros
 #define _SC_ARG_MAX 0
 #define _SC_GETPW_R_SIZE_MAX 1
@@ -128,6 +131,67 @@ extern "C" {
 #define _SC_TTY_NAME_MAX 19
 #define _SC_RE_DUP_MAX 20
 
+#define _SC_ATEXIT_MAX 21
+#define _SC_LOGIN_NAME_MAX 22
+#define _SC_THREAD_DESTRUCTOR_ITERATIONS 23
+#define _SC_THREAD_KEYS_MAX 24
+#define _SC_THREAD_STACK_MIN 25
+#define _SC_THREAD_THREADS_MAX 26
+#define _SC_TZNAME_MAX 27
+#define _SC_ASYNCHRONOUS_IO 28
+#define _SC_FSYNC 29
+#define _SC_MAPPED_FILES 30
+#define _SC_MEMLOCK 31
+#define _SC_MEMLOCK_RANGE 32
+#define _SC_MEMORY_PROTECTION 33
+#define _SC_MESSAGE_PASSING 34
+#define _SC_PRIORITY_SCHEDULING 35
+#define _SC_REALTIME_SIGNALS 36
+#define _SC_SEMAPHORES 37
+#define _SC_SHARED_MEMORY_OBJECTS 38
+#define _SC_SYNCHRONIZED_IO 39
+#define _SC_THREADS 40
+#define _SC_THREAD_ATTR_STACKADDR 41
+#define _SC_THREAD_ATTR_STACKSIZE 42
+#define _SC_THREAD_PRIORITY_SCHEDULING 43
+#define _SC_THREAD_PRIO_INHERIT 44
+#define _SC_THREAD_PRIO_PROTECT 45
+#define _SC_THREAD_PROCESS_SHARED 46
+#define _SC_THREAD_SAFE_FUNCTIONS 47
+#define _SC_TIMERS 48
+#define _SC_TIMER_MAX 49
+#define _SC_2_CHAR_TERM 50
+#define _SC_2_C_BIND 51
+#define _SC_2_C_DEV 52
+#define _SC_2_FORT_DEV 53
+#define _SC_2_FORT_RUN 54
+#define _SC_2_LOCALEDEF 55
+#define _SC_2_SW_DEV 56
+#define _SC_2_UPE 57
+#define _SC_2_VERSION 58
+#define _SC_CLOCK_SELECTION 59
+#define _SC_CPUTIME 60
+#define _SC_THREAD_CPUTIME 61
+#define _SC_MONOTONIC_CLOCK 62
+#define _SC_READER_WRITER_LOCKS 63
+#define _SC_SPIN_LOCKS 64
+#define _SC_REGEXP 65
+#define _SC_SHELL 66
+#define _SC_SPAWN 67
+#define _SC_2_PBS 68
+#define _SC_2_PBS_ACCOUNTING 69
+#define _SC_2_PBS_LOCATE 70
+#define _SC_2_PBS_TRACK 71
+#define _SC_2_PBS_MESSAGE 72
+#define _SC_STREAM_MAX 73
+#define _SC_AIO_LISTIO_MAX 74
+#define _SC_AIO_MAX 75
+#define _SC_DELAYTIMER_MAX 76
+#define _SC_MQ_OPEN_MAX 77
+#define _SC_MQ_PRIO_MAX 78
+#define _SC_RTSIG_MAX 79
+#define _SC_SIGQUEUE_MAX 80
+
 #define STDERR_FILENO 2
 #define STDIN_FILENO 0
 #define STDOUT_FILENO 1
@@ -136,7 +200,11 @@ extern "C" {
 
 #define L_ctermid 20
 
-// MISSING: intptr_t
+#ifndef intptr_t
+typedef __mlibc_intptr intptr_t;
+#endif
+
+#ifndef __MLIBC_ABI_ONLY
 
 int access(const char *path, int mode);
 unsigned int alarm(unsigned int seconds);
@@ -147,7 +215,7 @@ ssize_t confstr(int, char *, size_t);
 char *ctermid(char *s);
 int dup(int fd);
 int dup2(int src_fd, int dest_fd);
-__attribute__ ((noreturn)) void _exit(int status);
+__attribute__((__noreturn__)) void _exit(int status);
 void endusershell(void);
 int execl(const char *, const char *, ...);
 int execle(const char *, const char *, ...);
@@ -207,7 +275,7 @@ int setegid(gid_t);
 int seteuid(uid_t);
 int setgid(gid_t);
 int setpgid(pid_t, pid_t);
-pid_t setpgrp(pid_t, pid_t);
+pid_t setpgrp(void);
 int setregid(gid_t, gid_t);
 int setreuid(uid_t, uid_t);
 pid_t setsid(void);
@@ -218,7 +286,7 @@ void swab(const void *__restrict, void *__restrict, ssize_t);
 int symlink(const char *, const char *);
 int symlinkat(const char *, int, const char *);
 void sync(void);
-unsigned long sysconf(int);
+long sysconf(int);
 pid_t tcgetpgrp(int);
 int tcsetpgrp(int, pid_t);
 int truncate(const char *, off_t);
@@ -234,8 +302,12 @@ extern int optind;
 extern int opterr;
 extern int optopt;
 
+#endif /* !__MLIBC_ABI_ONLY */
+
 // Non-POSIX functions supported by Linux.
 typedef __mlibc_uint64 useconds_t;
+
+#ifndef __MLIBC_ABI_ONLY
 
 int getpagesize(void);
 char *get_current_dir_name(void);
@@ -260,17 +332,23 @@ int getresuid(uid_t *ruid, uid_t *euid, uid_t *suid);
 int getresgid(gid_t *rgid, gid_t *egid, gid_t *sgid);
 
 // Glibc doesn't provide them by default anymore, lock behind an option
-#ifdef __MLIBC_CRYPT_OPTION
+#if __MLIBC_CRYPT_OPTION
 char *crypt(const char *, const char *);
 void encrypt(char block[64], int flags);
 #endif
+
+#endif /* !__MLIBC_ABI_ONLY */
 
 #ifdef __cplusplus
 }
 #endif
 
-#ifdef __MLIBC_LINUX_OPTION
+#if __MLIBC_LINUX_OPTION
 #	include <bits/linux/linux_unistd.h>
+#endif
+
+#if __MLIBC_BSD_OPTION
+#	include <bits/bsd/bsd_unistd.h>
 #endif
 
 #endif // _UNISTD_H

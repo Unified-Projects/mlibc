@@ -1,3 +1,6 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 
 #include <errno.h>
 #include <stdio.h>
@@ -184,7 +187,7 @@ int dprintf(int fd, const char *format, ...) {
 	return result;
 }
 
-int vdprintf(int fd, const char *format, __gnuc_va_list args) {
+int vdprintf(int fd, const char *format, __builtin_va_list args) {
 	mlibc::fd_file file{fd};
 	int ret = vfprintf(&file, format, args);
 	file.flush();
@@ -194,4 +197,11 @@ int vdprintf(int fd, const char *format, __gnuc_va_list args) {
 char *fgetln(FILE *, size_t *) {
 	__ensure(!"Not implemented");
 	__builtin_unreachable();
+}
+
+FILE *fopencookie(void *cookie, const char *__restrict mode, cookie_io_functions_t funcs) {
+	int flags = mlibc::fd_file::parse_modestring(mode);
+
+	return frg::construct<mlibc::cookie_file>(getAllocator(), cookie, flags, funcs,
+		mlibc::file_dispose_cb<mlibc::cookie_file>);
 }

@@ -7,6 +7,8 @@
 extern "C" {
 #endif
 
+#ifndef __MLIBC_ABI_ONLY
+
 // Character classification function [7.4.1]
 int isalnum(int c);
 int isalpha(int c);
@@ -28,6 +30,8 @@ int isascii(int c);
 int tolower(int c);
 int toupper(int c);
 
+#endif /* !__MLIBC_ABI_ONLY */
+
 // Borrowed from glibc
 #define	toascii(c)	((c) & 0x7f)
 
@@ -35,7 +39,7 @@ int toupper(int c);
 }
 #endif
 
-#ifdef __MLIBC_POSIX_OPTION
+#if __MLIBC_POSIX_OPTION
 #	include <bits/posix/posix_ctype.h>
 #endif
 

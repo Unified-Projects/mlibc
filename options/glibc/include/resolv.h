@@ -19,6 +19,8 @@
 extern "C" {
 #endif
 
+#ifndef __MLIBC_ABI_ONLY
+
 int dn_expand(const unsigned char *, const unsigned char *,
 		const unsigned char *, char *, int);
 
@@ -26,14 +28,20 @@ int res_query(const char *, int, int, unsigned char *, int);
 
 int res_init(void);
 
+#endif /* !__MLIBC_ABI_ONLY */
+
 /* From musl: Unused; purely for broken apps
  * To avoid an massive struct, only add the items requested. */
 typedef struct __res_state {
+	int retrans;
+	int retry;
 	unsigned long options;
 	int nscount;
 	struct sockaddr_in nsaddr_list[MAXNS];
 	char *dnsrch[MAXDNSRCH + 1];
 	char defdname[256];
+	unsigned ndots:4;
+	unsigned nsort:4;
 	union {
 		char pad[52];
 		struct {
@@ -47,11 +55,16 @@ typedef struct __res_state {
 		} _ext;
 	} _u;
 } *res_state;
+
+#ifndef __MLIBC_ABI_ONLY
+
 struct __res_state *__res_state(void);
 #define _res (*__res_state())
 
 int res_ninit(res_state);
 void res_nclose(res_state);
+
+#endif /* !__MLIBC_ABI_ONLY */
 
 #ifdef __cplusplus
 }

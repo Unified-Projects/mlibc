@@ -4,7 +4,6 @@ if disable_linux_option
 endif
 libc_sources += files(
 	'generic/mntent-stubs.cpp',
-	'generic/poll-stubs.cpp',
 	'generic/pty-stubs.cpp',
 	'generic/sys-epoll.cpp',
 	'generic/sys-inotify-stubs.cpp',
@@ -17,6 +16,7 @@ libc_sources += files(
 	'generic/sys-timerfd.cpp',
 	'generic/sys-eventfd.cpp',
 	'generic/sys-reboot.cpp',
+	'generic/sys-xattr.cpp',
 	'generic/utmp-stubs.cpp',
 	'generic/utmpx.cpp',
 	'generic/linux-unistd.cpp',
@@ -26,6 +26,11 @@ libc_sources += files(
 	'generic/sys-sysinfo.cpp',
 	'generic/module.cpp',
 	'generic/sys-klog.cpp',
+	'generic/sched.cpp',
+	'generic/sys-quota.cpp',
+	'generic/capabilities.cpp',
+	'generic/cpuset.cpp',
+	'generic/sys-swap.cpp',
 )
 
 if not no_headers
@@ -43,11 +48,9 @@ if not no_headers
 	)
 	install_headers(
 		'include/bits/linux/linux_unistd.h',
+		'include/bits/linux/linux_sched.h',
+		'include/bits/linux/cpu_set.h',
 		subdir: 'bits/linux'
-	)
-	install_headers(
-		'include/net/if_arp.h',
-		subdir: 'net'
 	)
 	install_headers(
 		'include/netpacket/packet.h',
@@ -77,7 +80,14 @@ if not no_headers
 		'include/sys/vt.h',
 		'include/sys/sysinfo.h',
 		'include/sys/klog.h',
+		'include/sys/xattr.h',
+		'include/sys/quota.h',
+		'include/sys/swap.h',
 		subdir: 'sys'
+	)
+	install_headers(
+		'include/linux/libc-compat.h',
+		subdir: 'linux'
 	)
 endif
 

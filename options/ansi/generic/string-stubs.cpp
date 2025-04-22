@@ -101,9 +101,11 @@ int strncmp(const char *a, const char *b, size_t max_size) {
 	}
 }
 
-size_t strxfrm(char *__restrict, const char *__restrict, size_t) {
-	__ensure(!"Not implemented");
-	__builtin_unreachable();
+size_t strxfrm(char *__restrict dest, const char *__restrict src, size_t n) {
+	size_t l = strlen(src);
+	// NOTE: This might not work for non ANSI charsets.
+	strncpy(dest, src, n);
+	return l;
 }
 
 void *memchr(const void *s, int c, size_t size) {
@@ -403,7 +405,8 @@ char *strerror(int e) {
 	case ENOTSUP: s = "Operation not supported (ENOTSUP)"; break;
 	case ENOTTY: s = "Inappropriate ioctl for device (ENOTTY)"; break;
 	case EOVERFLOW: s = "Value too large for defined datatype (EOVERFLOW)"; break;
-#ifndef __linux__
+#if EOPNOTSUPP != ENOTSUP
+	/* these are aliases on the mlibc abi */
 	case EOPNOTSUPP: s = "Operation not supported (EOPNOTSUP)"; break;
 #endif
 	case EOWNERDEAD: s = "Owner died (EOWNERDEAD)"; break;

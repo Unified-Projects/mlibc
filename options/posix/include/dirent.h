@@ -20,15 +20,25 @@ extern "C" {
 #define DT_SOCK 12
 #define DT_WHT 14
 
+#define __MLIBC_DIRENT_BODY ino_t d_ino; \
+			off_t d_off; \
+			unsigned short d_reclen; \
+			unsigned char d_type; \
+			char d_name[1024];
+
 struct dirent {
-	ino_t d_ino;
-	off_t d_off;
-	unsigned short d_reclen;
-	unsigned char d_type;
-	char d_name[1024];
+	__MLIBC_DIRENT_BODY
+};
+
+struct dirent64 {
+	__MLIBC_DIRENT_BODY
 };
 
 #define d_fileno d_ino
+
+#undef __MLIBC_DIRENT_BODY
+
+#define IFTODT(mode) (((mode) & 0170000) >> 12)
 
 struct __mlibc_dir_struct {
 	int __handle;
@@ -39,6 +49,8 @@ struct __mlibc_dir_struct {
 };
 
 typedef struct __mlibc_dir_struct DIR;
+
+#ifndef __MLIBC_ABI_ONLY
 
 int alphasort(const struct dirent **, const struct dirent **);
 int closedir(DIR *);
@@ -53,6 +65,8 @@ int scandir(const char *, struct dirent ***, int (*)(const struct dirent *),
 void seekdir(DIR *, long);
 long telldir(DIR *);
 int versionsort(const struct dirent **, const struct dirent **);
+
+#endif /* !__MLIBC_ABI_ONLY */
 
 #ifdef __cplusplus
 }

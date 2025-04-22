@@ -14,11 +14,6 @@
 extern "C" {
 #endif
 
-// This mechanism provides __gnu_va_list which is equivalent to va_list
-// We have to do this because stdio.h is not supposed to define va_list
-#define __need___va_list
-#include <stdarg.h>
-
 // [C11-7.21.1] I/O related types
 
 #define __MLIBC_EOF_BIT 1
@@ -79,6 +74,8 @@ typedef size_t fpos_t;
 
 #define TMP_MAX 1024
 
+#ifndef __MLIBC_ABI_ONLY
+
 extern FILE *stderr;
 extern FILE *stdin;
 extern FILE *stdout;
@@ -104,52 +101,52 @@ void setbuffer(FILE *, char *, size_t);
 
 // [C11-7.21.6] Formatted input/output functions
 
-__attribute__((format(gnu_printf, 2, 3)))
+__attribute__((__format__(gnu_printf, 2, 3)))
 int fprintf(FILE *__restrict stream, const char *__restrict format, ...);
 
-__attribute__((format(gnu_scanf, 2, 3)))
+__attribute__((__format__(gnu_scanf, 2, 3)))
 int fscanf(FILE *__restrict stream, const char *__restrict format, ...);
 
-__attribute__((format(gnu_printf, 1, 2)))
+__attribute__((__format__(gnu_printf, 1, 2)))
 int printf(const char *__restrict format, ...);
 
-__attribute__((format(gnu_scanf, 1, 2)))
+__attribute__((__format__(gnu_scanf, 1, 2)))
 int scanf(const char *__restrict format, ...);
 
-__attribute__((format(gnu_printf, 3, 4)))
+__attribute__((__format__(gnu_printf, 3, 4)))
 int snprintf(char *__restrict buffer, size_t max_size, const char *__restrict format, ...);
 
-__attribute__((format(gnu_printf, 2, 3)))
+__attribute__((__format__(gnu_printf, 2, 3)))
 int sprintf(char *__restrict buffer, const char *__restrict format, ...);
 
-__attribute__((format(gnu_scanf, 2, 3)))
+__attribute__((__format__(gnu_scanf, 2, 3)))
 int sscanf(const char *__restrict buffer, const char *__restrict format, ...);
 
-__attribute__((format(gnu_printf, 2, 0)))
-int vfprintf(FILE *__restrict stream, const char *__restrict format, __gnuc_va_list args);
+__attribute__((__format__(gnu_printf, 2, 0)))
+int vfprintf(FILE *__restrict stream, const char *__restrict format, __builtin_va_list args);
 
-__attribute__((format(gnu_scanf, 2, 0)))
-int vfscanf(FILE *__restrict stream, const char *__restrict format, __gnuc_va_list args);
+__attribute__((__format__(gnu_scanf, 2, 0)))
+int vfscanf(FILE *__restrict stream, const char *__restrict format, __builtin_va_list args);
 
-__attribute__((format(gnu_printf, 1, 0)))
-int vprintf(const char *__restrict format, __gnuc_va_list args);
+__attribute__((__format__(gnu_printf, 1, 0)))
+int vprintf(const char *__restrict format, __builtin_va_list args);
 
-__attribute__((format(gnu_scanf, 1, 0)))
-int vscanf(const char *__restrict format, __gnuc_va_list args);
+__attribute__((__format__(gnu_scanf, 1, 0)))
+int vscanf(const char *__restrict format, __builtin_va_list args);
 
-__attribute__((format(gnu_printf, 3, 0)))
+__attribute__((__format__(gnu_printf, 3, 0)))
 int vsnprintf(char *__restrict buffer, size_t max_size,
-		const char *__restrict format, __gnuc_va_list args);
+		const char *__restrict format, __builtin_va_list args);
 
-__attribute__((format(gnu_printf, 2, 0)))
-int vsprintf(char *__restrict buffer, const char *__restrict format, __gnuc_va_list args);
+__attribute__((__format__(gnu_printf, 2, 0)))
+int vsprintf(char *__restrict buffer, const char *__restrict format, __builtin_va_list args);
 
-__attribute__((format(gnu_scanf, 2, 0)))
-int vsscanf(const char *__restrict buffer, const char *__restrict format, __gnuc_va_list args);
+__attribute__((__format__(gnu_scanf, 2, 0)))
+int vsscanf(const char *__restrict buffer, const char *__restrict format, __builtin_va_list args);
 
 // this is a gnu extension
-__attribute__((format(gnu_printf, 2, 0)))
-int vasprintf(char **, const char *, __gnuc_va_list);
+__attribute__((__format__(gnu_printf, 2, 0)))
+int vasprintf(char **, const char *, __builtin_va_list);
 
 // [C11-7.21.7] Character input/output functions
 
@@ -218,11 +215,13 @@ size_t fwrite_unlocked(const void *__restrict, size_t, size_t, FILE *__restrict)
 char *fgets_unlocked(char *, int, FILE *);
 int fputs_unlocked(const char *, FILE *);
 
+#endif /* !__MLIBC_ABI_ONLY */
+
 #ifdef __cplusplus
 }
 #endif
 
-#ifdef __MLIBC_POSIX_OPTION
+#if __MLIBC_POSIX_OPTION
 #	include <bits/posix/posix_stdio.h>
 #endif
 

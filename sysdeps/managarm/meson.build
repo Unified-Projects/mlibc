@@ -32,12 +32,15 @@ libc_include_dirs += include_directories('../../../ports/libdrm/include')
 libc_include_dirs += managarm_incl
 
 libc_sources += files(
+	'generic/drm.cpp',
 	'generic/ensure.cpp',
 	'generic/entry.cpp',
 	'generic/file.cpp',
 	'generic/fork-exec.cpp',
+	'generic/ioctl.cpp',
 	'generic/memory.cpp',
 	'generic/mount.cpp',
+	'generic/net.cpp',
 	'generic/signals.cpp',
 	'generic/socket.cpp',
 	'generic/time.cpp'
@@ -105,6 +108,8 @@ if not no_headers
 		'include/abi-bits/socklen_t.h',
 		'include/abi-bits/statfs.h',
 		'include/abi-bits/statvfs.h',
+		'include/abi-bits/ioctls.h',
+		'include/abi-bits/xattr.h',
 		subdir: 'abi-bits'
 	)
 endif

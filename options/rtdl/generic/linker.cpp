@@ -12,7 +12,9 @@
 #include <internal-config.h>
 #include "linker.hpp"
 
+#if !MLIBC_MMAP_ALLOCATE_DSO
 uintptr_t libraryBase = 0x41000000;
+#endif
 
 constexpr bool verbose = false;
 constexpr bool stillSlightlyVerbose = false;
@@ -33,7 +35,7 @@ constexpr inline bool tlsAboveTp = true;
 extern DebugInterface globalDebugInterface;
 extern uintptr_t __stack_chk_guard;
 
-#ifdef MLIBC_STATIC_BUILD
+#if MLIBC_STATIC_BUILD
 extern "C" size_t __init_array_start[];
 extern "C" size_t __init_array_end[];
 extern "C" size_t __preinit_array_start[];
@@ -92,13 +94,13 @@ SharedObject *ObjectRepository::injectObjectFromDts(frg::string_view name,
 	__ensure(!findLoadedObject(name));
 
 	auto object = frg::construct<SharedObject>(getAllocator(),
-		name.data(), std::move(path), false, rts);
+		name.data(), std::move(path), false, globalScope.get(), rts);
 	object->baseAddress = base_address;
 	object->dynamic = dynamic;
 	_parseDynamic(object);
 
 	_addLoadedObject(object);
-	_discoverDependencies(object, rts);
+	_discoverDependencies(object, globalScope.get(), rts);
 
 	return object;
 }
@@ -110,12 +112,12 @@ SharedObject *ObjectRepository::injectObjectFromPhdrs(frg::string_view name,
 	__ensure(!findLoadedObject(name));
 
 	auto object = frg::construct<SharedObject>(getAllocator(),
-		name.data(), std::move(path), true, rts);
+		name.data(), std::move(path), true, globalScope.get(), rts);
 	_fetchFromPhdrs(object, phdr_pointer, phdr_entry_size, num_phdrs, entry_pointer);
 	_parseDynamic(object);
 
 	_addLoadedObject(object);
-	_discoverDependencies(object, rts);
+	_discoverDependencies(object, globalScope.get(), rts);
 
 	return object;
 }
@@ -126,10 +128,10 @@ SharedObject *ObjectRepository::injectStaticObject(frg::string_view name,
 		uint64_t rts) {
 	__ensure(!findLoadedObject(name));
 	auto object = frg::construct<SharedObject>(getAllocator(),
-		name.data(), std::move(path), true, rts);
+		name.data(), std::move(path), true, globalScope.get(), rts);
 	_fetchFromPhdrs(object, phdr_pointer, phdr_entry_size, num_phdrs, entry_pointer);
 
-#ifdef MLIBC_STATIC_BUILD
+#if MLIBC_STATIC_BUILD
 	object->initArray = reinterpret_cast<InitFuncPtr*>(__init_array_start);
 	object->initArraySize = static_cast<size_t>((uintptr_t)__init_array_end -
 			(uintptr_t)__init_array_start);
@@ -144,7 +146,7 @@ SharedObject *ObjectRepository::injectStaticObject(frg::string_view name,
 }
 
 SharedObject *ObjectRepository::requestObjectWithName(frg::string_view name,
-		SharedObject *origin, uint64_t rts) {
+		SharedObject *origin, Scope *localScope, bool createScope, uint64_t rts) {
 	if (auto obj = findLoadedObject(name))
 		return obj;
 
@@ -235,8 +237,17 @@ SharedObject *ObjectRepository::requestObjectWithName(frg::string_view name,
 	if(fd == -1)
 		return nullptr;
 
+	if (createScope) {
+		__ensure(localScope == nullptr);
+
+		// TODO: Free this when the scope is no longer needed.
+		localScope = frg::construct<Scope>(getAllocator());
+	}
+
+	__ensure(localScope != nullptr);
+
 	auto object = frg::construct<SharedObject>(getAllocator(),
-		name.data(), std::move(chosenPath), false, rts);
+		name.data(), std::move(chosenPath), false, localScope, rts);
 
 	_fetchFromFile(object, fd);
 	closeOrDie(fd);
@@ -244,12 +255,13 @@ SharedObject *ObjectRepository::requestObjectWithName(frg::string_view name,
 	_parseDynamic(object);
 
 	_addLoadedObject(object);
-	_discoverDependencies(object, rts);
+	_discoverDependencies(object, localScope, rts);
 
 	return object;
 }
 
-SharedObject *ObjectRepository::requestObjectAtPath(frg::string_view path, uint64_t rts) {
+SharedObject *ObjectRepository::requestObjectAtPath(frg::string_view path,
+		Scope *localScope, bool createScope, uint64_t rts) {
 	// TODO: Support SONAME correctly.
 	auto lastSlash = path.find_last('/') + 1;
 	auto name = path;
@@ -259,8 +271,17 @@ SharedObject *ObjectRepository::requestObjectAtPath(frg::string_view path, uint6
 	if (auto obj = findLoadedObject(name))
 		return obj;
 
+	if (createScope) {
+		__ensure(localScope == nullptr);
+
+		// TODO: Free this when the scope is no longer needed.
+		localScope = frg::construct<Scope>(getAllocator());
+	}
+
+	__ensure(localScope != nullptr);
+
 	auto object = frg::construct<SharedObject>(getAllocator(),
-		name.data(), path.data(), false, rts);
+		name.data(), path.data(), false, localScope, rts);
 
 	frg::string<MemoryAllocator> no_prefix(getAllocator(), path);
 
@@ -273,7 +294,7 @@ SharedObject *ObjectRepository::requestObjectAtPath(frg::string_view path, uint6
 	_parseDynamic(object);
 
 	_addLoadedObject(object);
-	_discoverDependencies(object, rts);
+	_discoverDependencies(object, localScope, rts);
 
 	return object;
 }
@@ -305,7 +326,7 @@ SharedObject *ObjectRepository::findLoadedObject(frg::string_view name) {
 	for (auto object : loadedObjects) {
 		// See if any object has a matching SONAME.
 		if (object->soName && name == object->soName)
-			return object;	
+			return object;
 	}
 
 	// TODO: We should also look at the device and inode here as a fallback.
@@ -409,8 +430,25 @@ void ObjectRepository::_fetchFromFile(SharedObject *object, int fd) {
 	}
 
 	__ensure(!(object->baseAddress & (hugeSize - 1)));
+
+#if MLIBC_MMAP_ALLOCATE_DSO
+	void *mappedAddr = nullptr;
+
+	if (mlibc::sys_vm_map(nullptr,
+			highest_address - object->baseAddress, PROT_NONE,
+			MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, &mappedAddr)) {
+		mlibc::panicLogger() << "sys_vm_map failed when allocating address space for DSO \""
+				<< object->name << "\""
+				<< ", base " << (void *)object->baseAddress
+				<< ", requested " << (highest_address - object->baseAddress) << " bytes"
+				<< frg::endlog;
+	}
+
+	object->baseAddress = reinterpret_cast<uintptr_t>(mappedAddr);
+#else
 	object->baseAddress = libraryBase;
 	libraryBase += (highest_address + (hugeSize - 1)) & ~(hugeSize - 1);
+#endif
 
 	if(verbose || logBaseAddresses)
 		mlibc::infoLogger() << "rtdl: Loading " << object->name
@@ -442,17 +480,15 @@ void ObjectRepository::_fetchFromFile(SharedObject *object, int fd) {
 			if(phdr->p_flags & PF_X)
 				prot |= PROT_EXEC;
 
-			#ifdef MLIBC_MAP_DSO_SEGMENTS
-				// TODO: Map with (prot | PROT_WRITE) here,
-				// then mprotect() to remove PROT_WRITE if that is necessary.
+			#if MLIBC_MAP_DSO_SEGMENTS
 				void *map_pointer;
 				if(mlibc::sys_vm_map(reinterpret_cast<void *>(map_address),
-						backed_map_size, prot,
+						backed_map_size, prot | PROT_WRITE,
 						MAP_PRIVATE | MAP_FIXED, fd, phdr->p_offset - misalign, &map_pointer))
 					__ensure(!"sys_vm_map failed");
 				if(total_map_size > backed_map_size)
 					if(mlibc::sys_vm_map(reinterpret_cast<void *>(map_address + backed_map_size),
-							total_map_size - backed_map_size, prot,
+							total_map_size - backed_map_size, prot | PROT_WRITE,
 							MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0, &map_pointer))
 						__ensure(!"sys_vm_map failed");
 
@@ -479,6 +515,10 @@ void ObjectRepository::_fetchFromFile(SharedObject *object, int fd) {
 				readExactlyOrDie(fd, reinterpret_cast<char *>(map_address) + misalign,
 						phdr->p_filesz);
 			#endif
+			// Take care of removing superfluous permissions.
+			if(mlibc::sys_vm_protect && ((prot & PROT_WRITE) == 0))
+				if(mlibc::sys_vm_protect(map_pointer, total_map_size, prot))
+					mlibc::infoLogger() << "mlibc: sys_vm_protect() failed in ld.so" << frg::endlog;
 		}else if(phdr->p_type == PT_TLS) {
 			object->tlsSegmentSize = phdr->p_memsz;
 			object->tlsAlignment = phdr->p_align;
@@ -658,7 +698,8 @@ void ObjectRepository::_parseDynamic(SharedObject *object) {
 	}
 }
 
-void ObjectRepository::_discoverDependencies(SharedObject *object, uint64_t rts) {
+void ObjectRepository::_discoverDependencies(SharedObject *object,
+		Scope *localScope, uint64_t rts) {
 	// Load required dynamic libraries.
 	for(size_t i = 0; object->dynamic[i].d_tag != DT_NULL; i++) {
 		Elf64_Dyn *dynamic = &object->dynamic[i];
@@ -668,7 +709,8 @@ void ObjectRepository::_discoverDependencies(SharedObject *object, uint64_t rts)
 		const char *library_str = (const char *)(object->baseAddress
 				+ object->stringTableOffset + dynamic->d_un.d_val);
 
-		auto library = requestObjectWithName(frg::string_view{library_str}, object, rts);
+		auto library = requestObjectWithName(frg::string_view{library_str},
+				object, localScope, false, rts);
 		if(!library)
 			mlibc::panicLogger() << "Could not satisfy dependency " << library_str << frg::endlog;
 		object->dependencies.push(library);
@@ -685,11 +727,11 @@ void ObjectRepository::_addLoadedObject(SharedObject *object) {
 // --------------------------------------------------------
 
 SharedObject::SharedObject(const char *name, frg::string<MemoryAllocator> path,
-	bool is_main_object, uint64_t object_rts)
+	bool is_main_object, Scope *local_scope, uint64_t object_rts)
 		: name(name, getAllocator()), path(std::move(path)),
 		interpreterPath(getAllocator()), soName(nullptr),
 		isMainObject(is_main_object), objectRts(object_rts), inLinkMap(false),
-		baseAddress(0), localScope(nullptr), dynamic(nullptr),
+		baseAddress(0), localScope(local_scope), dynamic(nullptr),
 		globalOffsetTable(nullptr), entry(nullptr), tlsSegmentSize(0),
 		tlsAlignment(0), tlsImageSize(0), tlsImagePtr(nullptr),
 		tlsInitialized(false), hashTableOffset(0), symbolTableOffset(0),
@@ -702,10 +744,10 @@ SharedObject::SharedObject(const char *name, frg::string<MemoryAllocator> path,
 		wasInitialized(false) { }
 
 SharedObject::SharedObject(const char *name, const char *path,
-	bool is_main_object, uint64_t object_rts)
+	bool is_main_object, Scope *localScope, uint64_t object_rts)
 		: SharedObject(name,
 			frg::string<MemoryAllocator> { path, getAllocator() },
-			is_main_object, object_rts) {}
+			is_main_object, localScope, object_rts) {}
 
 void processCopyRela(SharedObject *object, Elf64_Rela *reloc) {
 	Elf64_Xword type = ELF64_R_TYPE(reloc->r_info);
@@ -726,7 +768,7 @@ void processCopyRela(SharedObject *object, Elf64_Rela *reloc) {
 	auto symbol = (Elf64_Sym *)(object->baseAddress + object->symbolTableOffset
 			+ symbol_index * sizeof(Elf64_Sym));
 	ObjectSymbol r(object, symbol);
-	frg::optional<ObjectSymbol> p = object->localScope->resolveSymbol(r.getString(), Scope::resolveCopy);
+	frg::optional<ObjectSymbol> p = Scope::resolveGlobalOrLocal(*globalScope, object->localScope, r.getString(), object->objectRts, Scope::resolveCopy);
 	__ensure(p);
 
 	memcpy((void *)rel_addr, (void *)p->virtualAddress(), symbol->st_size);
@@ -867,7 +909,7 @@ Tcb *allocateTcb() {
 	tcb_ptr->cancelBits = tcbCancelEnableBit;
 	tcb_ptr->didExit = 0;
 	tcb_ptr->isJoinable = 1;
-	tcb_ptr->returnValue = nullptr;
+	memset(&tcb_ptr->returnValue, 0, sizeof(tcb_ptr->returnValue));
 	tcb_ptr->localKeys = frg::construct<frg::array<Tcb::LocalKey, PTHREAD_KEYS_MAX>>(getAllocator());
 	tcb_ptr->dtvSize = runtimeTlsMap->indices.size();
 	tcb_ptr->dtvPointers = frg::construct_n<void *>(getAllocator(), runtimeTlsMap->indices.size());
@@ -1048,7 +1090,7 @@ frg::optional<ObjectSymbol> resolveInObject(SharedObject *object, frg::string_vi
 	}
 }
 
-frg::optional<ObjectSymbol> Scope::resolveNext(frg::string_view string,
+frg::optional<ObjectSymbol> Scope::_resolveNext(frg::string_view string,
 		SharedObject *target) {
 	// Skip objects until we find the target, and only look for symbols after that.
 	size_t i;
@@ -1087,13 +1129,40 @@ void Scope::appendObject(SharedObject *object) {
 	_objects.push(object);
 }
 
-// TODO: let this return uintptr_t
-frg::optional<ObjectSymbol> Scope::resolveSymbol(frg::string_view string, ResolveFlags flags) {
-	for(size_t i = 0; i < _objects.size(); i++) {
-		if((flags & resolveCopy) && _objects[i]->isMainObject)
-			continue;
+frg::optional<ObjectSymbol> Scope::resolveGlobalOrLocal(Scope &globalScope,
+		Scope *localScope, frg::string_view string, uint64_t skipRts, ResolveFlags flags) {
+	auto sym = globalScope.resolveSymbol(string, skipRts, flags | skipGlobalAfterRts);
+	if(!sym && localScope)
+		sym = localScope->resolveSymbol(string, skipRts, flags | skipGlobalAfterRts);
+	return sym;
+}
 
-		frg::optional<ObjectSymbol> p = resolveInObject(_objects[i], string);
+frg::optional<ObjectSymbol> Scope::resolveGlobalOrLocalNext(Scope &globalScope,
+		Scope *localScope, frg::string_view string, SharedObject *origin) {
+	auto sym = globalScope._resolveNext(string, origin);
+	if(!sym && localScope) {
+		sym = localScope->_resolveNext(string, origin);
+	}
+	return sym;
+}
+
+// TODO: let this return uintptr_t
+frg::optional<ObjectSymbol> Scope::resolveSymbol(frg::string_view string,
+		uint64_t skipRts, ResolveFlags flags) {
+	for (auto object : _objects) {
+		if((flags & resolveCopy) && object->isMainObject)
+			continue;
+		if((flags & skipGlobalAfterRts) && object->globalRts > skipRts) {
+			// globalRts should be monotone increasing for objects in the global scope,
+			// so as an optimization we can break early here.
+			// TODO: If we implement DT_SYMBOLIC, this assumption fails.
+			if(isGlobal)
+				break;
+			else
+				continue;
+		}
+
+		frg::optional<ObjectSymbol> p = resolveInObject(object, string);
 		if(p)
 			return p;
 	}
@@ -1106,7 +1175,7 @@ frg::optional<ObjectSymbol> Scope::resolveSymbol(frg::string_view string, Resolv
 // --------------------------------------------------------
 
 Loader::Loader(Scope *scope, SharedObject *mainExecutable, bool is_initial_link, uint64_t rts)
-: _mainExecutable{mainExecutable}, _globalScope{scope}, _isInitialLink{is_initial_link},
+: _mainExecutable{mainExecutable}, _loadScope{scope}, _isInitialLink{is_initial_link},
 		_linkRts{rts}, _linkBfs{getAllocator()}, _initQueue{getAllocator()} { }
 
 void Loader::_buildLinkBfs(SharedObject *root) {
@@ -1147,67 +1216,66 @@ void Loader::linkObjects(SharedObject *root) {
 	_buildLinkBfs(root);
 	_buildTlsMaps();
 
-	// Promote objects to the global scope.
-	for(auto it = _linkBfs.begin(); it != _linkBfs.end(); ++it) {
-		if((*it)->globalRts)
-			continue;
-		(*it)->globalRts = _linkRts;
-		_globalScope->appendObject(*it);
+	// Promote objects to the desired scope.
+	for(auto object : _linkBfs) {
+		if (object->globalRts == 0 && _loadScope->isGlobal)
+			object->globalRts = _linkRts;
+
+		_loadScope->appendObject(object);
 	}
 
 	// Process regular relocations.
-	for(auto it = _linkBfs.begin(); it != _linkBfs.end(); ++it) {
+	for(auto object : _linkBfs) {
 		// Some objects have already been linked before.
-		if((*it)->objectRts < _linkRts)
+		if(object->objectRts < _linkRts)
 			continue;
 
-		if((*it)->dynamic == nullptr)
+		if(object->dynamic == nullptr)
 			continue;
 
 		if(verbose)
-			mlibc::infoLogger() << "rtdl: Linking " << (*it)->name << frg::endlog;
+			mlibc::infoLogger() << "rtdl: Linking " << object->name << frg::endlog;
 
-		__ensure(!(*it)->wasLinked);
-		(*it)->localScope = _globalScope;
+		__ensure(!object->wasLinked);
 
 		// TODO: Support this.
-		if((*it)->symbolicResolution)
+		if(object->symbolicResolution)
 			mlibc::infoLogger() << "\e[31mrtdl: DT_SYMBOLIC is not implemented correctly!\e[39m"
 					<< frg::endlog;
 
-		_processStaticRelocations(*it);
-		_processLazyRelocations(*it);
+		_processStaticRelocations(object);
+		_processLazyRelocations(object);
 	}
 
 	// Process copy relocations.
-	for(auto it = _linkBfs.begin(); it != _linkBfs.end(); ++it) {
-		if(!(*it)->isMainObject)
+	for(auto object : _linkBfs) {
+		if(!object->isMainObject)
 			continue;
 
 		// Some objects have already been linked before.
-		if((*it)->objectRts < _linkRts)
+		if(object->objectRts < _linkRts)
 			continue;
 
-		if((*it)->dynamic == nullptr)
+		if(object->dynamic == nullptr)
 			continue;
 
-		processCopyRelocations(*it);
+		processCopyRelocations(object);
 	}
 
-	for(auto it = _linkBfs.begin(); it != _linkBfs.end(); ++it) {
-		(*it)->wasLinked = true;
+	for(auto object : _linkBfs) {
+		object->wasLinked = true;
 
-		if((*it)->inLinkMap)
+		if(object->inLinkMap)
 			continue;
 
 		auto linkMap = reinterpret_cast<LinkMap*>(globalDebugInterface.head);
 
-		(*it)->linkMap.prev = linkMap;
-		(*it)->linkMap.next = linkMap->next;
+		object->linkMap.prev = linkMap;
+		object->linkMap.next = linkMap->next;
 		if(linkMap->next)
-			linkMap->next->prev = &((*it)->linkMap);
-		linkMap->next = &((*it)->linkMap);
-		(*it)->inLinkMap = true;
+			linkMap->next->prev = &(object->linkMap);
+		linkMap->next = &(object->linkMap);
+		object->inLinkMap = true;
 	}
 }
 
@@ -1219,8 +1287,7 @@ void Loader::_buildTlsMaps() {
 		__ensure(!_linkBfs.empty());
 		__ensure(_linkBfs.front()->isMainObject);
 
-		for(auto it = _linkBfs.begin(); it != _linkBfs.end(); ++it) {
-			SharedObject *object = *it;
+		for(auto object : _linkBfs) {
 			__ensure(object->tlsModel == TlsModel::null);
 
 			if(object->tlsSegmentSize == 0)
@@ -1261,9 +1328,7 @@ void Loader::_buildTlsMaps() {
 		// Reserve some additional space for future libraries.
 		runtimeTlsMap->initialLimit = runtimeTlsMap->initialPtr + 64;
 	}else{
-		for(auto it = _linkBfs.begin(); it != _linkBfs.end(); ++it) {
-			SharedObject *object = *it;
-
+		for(auto object : _linkBfs) {
 			if(object->tlsModel != TlsModel::null)
 				continue;
 			if(object->tlsSegmentSize == 0)
@@ -1325,13 +1390,12 @@ void Loader::initObjects() {
 
 	// Convert the breadth-first representation to a depth-first post-order representation,
 	// so that every object is initialized *after* its dependencies.
-	for(auto it = _linkBfs.begin(); it != _linkBfs.end(); ++it) {
-		if(!(*it)->scheduledForInit)
-			_scheduleInit((*it));
+	for(auto object : _linkBfs) {
+		if(!object->scheduledForInit)
+			_scheduleInit(object);
 	}
 
-	for(auto it = _initQueue.begin(); it != _initQueue.end(); ++it) {
-		SharedObject *object = *it;
+	for(auto object : _initQueue) {
 		if(!object->wasInitialized)
 			doInitialize(object);
 	}
@@ -1377,7 +1441,9 @@ void Loader::_processRela(SharedObject *object, Elf64_Rela *reloc) {
 		auto symbol = (Elf64_Sym *)(object->baseAddress + object->symbolTableOffset
 				+ symbol_index * sizeof(Elf64_Sym));
 		ObjectSymbol r(object, symbol);
-		p = object->localScope->resolveSymbol(r.getString(), 0);
+
+		p = Scope::resolveGlobalOrLocal(*globalScope, object->localScope,
+				r.getString(), object->objectRts, 0);
 		if(!p) {
 			if(ELF64_ST_BIND(symbol->st_info) != STB_WEAK)
 				mlibc::panicLogger() << "Unresolved load-time symbol "
@@ -1625,7 +1691,8 @@ void Loader::_processLazyRelocations(SharedObject *object) {
 				auto symbol = (Elf64_Sym *)(object->baseAddress + object->symbolTableOffset
 						+ symbol_index * sizeof(Elf64_Sym));
 				ObjectSymbol r(object, symbol);
-				auto p = object->localScope->resolveSymbol(r.getString(), 0);
+				auto p = Scope::resolveGlobalOrLocal(*globalScope, object->localScope, r.getString(), object->objectRts, 0);
+
 				if(!p) {
 					if(ELF64_ST_BIND(symbol->st_info) != STB_WEAK)
 						mlibc::panicLogger() << "rtdl: Unresolved JUMP_SLOT symbol "
@@ -1642,6 +1709,14 @@ void Loader::_processLazyRelocations(SharedObject *object) {
 				*((uint64_t *)rel_addr) += object->baseAddress;
 			}
 			break;
+#if defined(__x86_64__)
+		case R_X86_64_IRELATIVE: {
+			auto ptr = object->baseAddress + reloc->r_addend;
+			auto target = reinterpret_cast<Elf64_Addr (*)(void)>(ptr)();
+			*((uint64_t *)rel_addr) = target;
+			break;
+		}
+#endif
 // TODO: TLSDESC relocations aren't aarch64 specific
 #if defined(__aarch64__)
 		case R_AARCH64_TLSDESC: {
@@ -1652,7 +1727,7 @@ void Loader::_processLazyRelocations(SharedObject *object) {
 				auto symbol = (Elf64_Sym *)(object->baseAddress + object->symbolTableOffset
 						+ symbol_index * sizeof(Elf64_Sym));
 				ObjectSymbol r(object, symbol);
-				frg::optional<ObjectSymbol> p = object->localScope->resolveSymbol(r.getString(), 0);
+				auto p = Scope::resolveGlobalOrLocal(*globalScope, object->localScope, r.getString(), object->objectRts, 0);
 
 				if (!p) {
 					__ensure(ELF64_ST_BIND(symbol->st_info) != STB_WEAK);

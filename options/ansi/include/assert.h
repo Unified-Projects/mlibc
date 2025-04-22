@@ -6,15 +6,25 @@
 extern "C" {
 #endif
 
+#ifndef __MLIBC_ABI_ONLY
+
 // NOTE: This is not ISO C. Declared in LSB
 void __assert_fail(const char *assertion, const char *file, unsigned int line,
 		const char *function);
+
+#endif /* !__MLIBC_ABI_ONLY */
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif // _ASSERT_H
+
+#include <mlibc-config.h>
+
+#if __MLIBC_GLIBC_OPTION
+#	include <bits/glibc/glibc_assert.h>
+#endif
 
 // NOTE: [7.2] requires this be outside the include guard
 #ifdef NDEBUG

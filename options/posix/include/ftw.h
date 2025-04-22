@@ -17,6 +17,8 @@
 #define FTW_DEPTH 4
 #define FTW_CHDIR 8
 
+#define FTW_CONTINUE 0
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -26,8 +28,12 @@ struct FTW {
 	int level;
 };
 
+#ifndef __MLIBC_ABI_ONLY
+
 int ftw(const char *, int (*)(const char *, const struct stat *, int), int);
 int nftw(const char *, int (*)(const char *, const struct stat *, int, struct FTW *), int, int);
+
+#endif /* !__MLIBC_ABI_ONLY */
 
 #ifdef __cplusplus
 }

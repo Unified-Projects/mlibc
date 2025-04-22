@@ -9,6 +9,8 @@
 extern "C" {
 #endif
 
+#include <bits/winsize.h>
+
 // baud rate constants for speed_t
 #define B0       0
 #define B50      1
@@ -49,6 +51,8 @@ extern "C" {
 #define TIOCM_DTR 0x002
 #define TIOCM_RTS 0x004
 
+#ifndef __MLIBC_ABI_ONLY
+
 speed_t cfgetispeed(const struct termios *);
 speed_t cfgetospeed(const struct termios *);
 int cfsetispeed(struct termios *, speed_t);
@@ -62,6 +66,8 @@ pid_t tcgetsid(int);
 int tcsendbreak(int, int);
 int tcsetattr(int, int, const struct termios *);
 
+#endif /* !__MLIBC_ABI_ONLY */
+
 // This is a linux extension
 
 #define TIOCGPGRP 0x540F
@@ -70,17 +76,13 @@ int tcsetattr(int, int, const struct termios *);
 #define TIOCSWINSZ 0x5414
 #define TIOCGSID 0x5429
 
-struct winsize {
-	unsigned short ws_row;
-	unsigned short ws_col;
-	unsigned short ws_xpixel;
-	unsigned short ws_ypixel;
-};
-
 #define ECHOCTL 0001000
 #define FLUSHO  0010000
 #define IMAXBEL 0020000
 #define ECHOKE  0040000
+
+#define IUCLC 0001000
+#define IUTF8 0040000
 
 #ifdef __cplusplus
 }

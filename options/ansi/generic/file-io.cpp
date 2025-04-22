@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
-#ifdef __MLIBC_GLIBC_OPTION
+#if __MLIBC_GLIBC_OPTION
 #include <stdio_ext.h>
 #endif
 
@@ -444,6 +444,31 @@ int fd_file::close() {
 	return 0;
 }
 
+int fd_file::reopen(const char *path, const char *mode) {
+	int mode_flags = parse_modestring(mode);
+
+	int fd;
+	if(int e = sys_open(path, mode_flags, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH, &fd); e) {
+		return e;
+	}
+
+	flush();
+	close();
+	getAllocator().deallocate(__buffer_ptr, __buffer_size + ungetBufferSize);
+
+	__buffer_ptr = nullptr;
+	__unget_ptr = nullptr;
+	__buffer_size = 4096;
+	_reset();
+	_fd = fd;
+
+	if(mode_flags & O_APPEND) {
+		seek(0, SEEK_END);
+	}
+
+	return 0;
+}
+
 int fd_file::determine_type(stream_type *type) {
 	off_t offset;
 	int e = mlibc::sys_seek(_fd, 0, SEEK_CUR, &offset);
@@ -709,7 +734,7 @@ int ungetc(int c, FILE *file_base) {
 	return file->unget(c);
 }
 
-#ifdef __MLIBC_GLIBC_OPTION
+#if __MLIBC_GLIBC_OPTION
 void __fpurge(FILE *file_base) {
 	auto file = static_cast<mlibc::abstract_file *>(file_base);
 	frg::unique_lock lock(file->_lock);

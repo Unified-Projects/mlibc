@@ -64,6 +64,17 @@
 #define SYS_FUTEX_WAIT 57
 #define SYS_FUTEX_WAKE 58
 #define SYS_LINK 59
+#define SYS_BACKTRACE 60
+#define SYS_POLL 61
+#define SYS_EXIT_THREAD 62
+#define SYS_SOCK_RECV 63
+#define SYS_SETITIMER 64
+#define SYS_GETITIMER 65
+#define SYS_GETPPID 66
+#define SYS_SOCKET_PAIR 67
+#define SYS_RENAME 68
+#define SYS_MPROTECT 69
+#define SYS_SOCK_SEND 70
 
 // Invalid syscall used to trigger a log error in the kernel (as a hint)
 // so, that we can implement the syscall in the kernel.
@@ -158,51 +169,51 @@ static sc_word_t syscall6(int sc, sc_word_t arg1, sc_word_t arg2,
 } // extern "C"
 
 // Cast to the argument type of the extern "C" functions.
-__attribute__((always_inline)) inline sc_word_t sc_cast(long x) { return x; }
-__attribute__((always_inline)) inline sc_word_t sc_cast(const void *x) {
+__attribute__((__always_inline__)) inline sc_word_t sc_cast(long x) { return x; }
+__attribute__((__always_inline__)) inline sc_word_t sc_cast(const void *x) {
     return reinterpret_cast<sc_word_t>(x);
 }
 
 // C++ wrappers for the extern "C" functions.
-__attribute__((always_inline)) static inline long _syscall(int call) {
+__attribute__((__always_inline__)) static inline long _syscall(int call) {
     return syscall0(call);
 }
 
-__attribute__((always_inline)) static inline long _syscall(int call,
+__attribute__((__always_inline__)) static inline long _syscall(int call,
                                                            sc_word_t arg0) {
     return syscall1(call, arg0);
 }
 
-__attribute__((always_inline)) static inline long
+__attribute__((__always_inline__)) static inline long
 _syscall(int call, sc_word_t arg0, sc_word_t arg1) {
     return syscall2(call, arg0, arg1);
 }
 
-__attribute__((always_inline)) static inline long
+__attribute__((__always_inline__)) static inline long
 _syscall(int call, sc_word_t arg0, sc_word_t arg1, sc_word_t arg2) {
     return syscall3(call, arg0, arg1, arg2);
 }
 
-__attribute__((always_inline)) static inline long
+__attribute__((__always_inline__)) static inline long
 _syscall(int call, sc_word_t arg0, sc_word_t arg1, sc_word_t arg2,
          sc_word_t arg3) {
     return syscall4(call, arg0, arg1, arg2, arg3);
 }
 
-__attribute__((always_inline)) static inline long
+__attribute__((__always_inline__)) static inline long
 _syscall(int call, sc_word_t arg0, sc_word_t arg1, sc_word_t arg2,
          sc_word_t arg3, sc_word_t arg4) {
     return syscall5(call, arg0, arg1, arg2, arg3, arg4);
 }
 
-__attribute__((always_inline)) static inline long
+__attribute__((__always_inline__)) static inline long
 _syscall(int call, sc_word_t arg0, sc_word_t arg1, sc_word_t arg2,
          sc_word_t arg3, sc_word_t arg4, sc_word_t arg5) {
     return syscall6(call, arg0, arg1, arg2, arg3, arg4, arg5);
 }
 
 template <typename... T>
-__attribute__((always_inline)) static inline long syscall(sc_word_t call,
+__attribute__((__always_inline__)) static inline long syscall(sc_word_t call,
                                                           T... args) {
     return _syscall(call, sc_cast(args)...);
 }

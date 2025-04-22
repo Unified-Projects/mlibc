@@ -33,6 +33,11 @@ extern "C" {
 #define IN_Q_OVERFLOW 0x4000
 #define IN_UNMOUNT 0x2000
 
+#define IN_ALL_EVENTS (IN_ACCESS | IN_MODIFY | IN_ATTRIB | IN_CLOSE_WRITE | \
+			 IN_CLOSE_NOWRITE | IN_OPEN | IN_MOVED_FROM | \
+			 IN_MOVED_TO | IN_DELETE | IN_CREATE | IN_DELETE_SELF | \
+			 IN_MOVE_SELF)
+
 struct inotify_event {
 	int wd;
 	unsigned int mask;
@@ -41,10 +46,14 @@ struct inotify_event {
 	char name[];
 };
 
+#ifndef __MLIBC_ABI_ONLY
+
 int inotify_init(void);
 int inotify_init1(int);
 int inotify_add_watch(int, const char *, uint32_t);
 int inotify_rm_watch(int, int);
+
+#endif /* !__MLIBC_ABI_ONLY */
 
 #ifdef __cplusplus
 }

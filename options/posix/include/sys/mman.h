@@ -1,6 +1,7 @@
 #ifndef _SYS_MMAN_H
 #define _SYS_MMAN_H
 
+#include <mlibc-config.h>
 #include <abi-bits/mode_t.h>
 #include <abi-bits/vm-flags.h>
 #include <bits/off_t.h>
@@ -9,6 +10,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#ifndef __MLIBC_ABI_ONLY
 
 void *mmap(void *, size_t, int, int, int, off_t);
 int mprotect(void *, size_t, int);
@@ -29,11 +32,13 @@ int shm_unlink(const char *);
 void *mremap(void *, size_t, size_t, int, ...);
 int remap_file_pages(void *, size_t, int, size_t, int);
 
-#ifdef __MLIBC_LINUX_OPTION
+#if __MLIBC_LINUX_OPTION
 int memfd_create(const char *, unsigned int);
 int madvise(void *, size_t, int);
 int mincore(void *, size_t, unsigned char *);
-#endif
+#endif /* __MLIBC_LINUX_OPTION */
+
+#endif /* !__MLIBC_ABI_ONLY */
 
 #ifdef __cplusplus
 }

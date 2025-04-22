@@ -14,6 +14,7 @@ libc_sources += files(
 	'generic/lookup.cpp',
 	'generic/netdb-stubs.cpp',
 	'generic/net-if-stubs.cpp',
+	'generic/poll.cpp',
 	'generic/posix_ctype.cpp',
 	'generic/posix-file-io.cpp',
 	'generic/posix_locale.cpp',
@@ -54,7 +55,8 @@ libc_sources += files(
 	'generic/sys-sem.cpp',
 	'generic/sys-ipc.cpp',
 	'generic/time.cpp',
-	'generic/wordexp-stubs.cpp'
+	'generic/wordexp-stubs.cpp',
+	'generic/mqueue.cpp'
 )
 
 if not headers_only
@@ -108,12 +110,17 @@ if not no_headers
 	)
 	install_headers(
 		'include/net/if.h',
+		'include/net/if_arp.h',
 		subdir: 'net'
 	)
 	install_headers(
 		'include/netinet/in.h',
 		'include/netinet/ip.h',
 		'include/netinet/tcp.h',
+		'include/netinet/icmp6.h',
+		'include/netinet/if_ether.h',
+		'include/netinet/udp.h',
+		'include/netinet/ip6.h',
 		subdir: 'netinet'
 	)
 	install_headers(

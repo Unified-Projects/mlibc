@@ -24,6 +24,7 @@
 #include <sys/statfs.h>
 #include <sys/time.h>
 #include <sys/wait.h>
+#include <sched.h>
 #include <termios.h>
 #include <time.h>
 #include <ucontext.h>
@@ -32,9 +33,6 @@ namespace [[gnu::visibility("hidden")]] mlibc {
 
 void sys_libc_log(const char *message);
 [[noreturn]] void sys_libc_panic();
-
-int sys_futex_wait(int *pointer, int expected, const struct timespec *time);
-int sys_futex_wake(int *pointer);
 
 [[noreturn]] void sys_exit(int status);
 [[noreturn, gnu::weak]] void sys_thread_exit();
@@ -48,6 +46,7 @@ int sys_open(const char *pathname, int flags, mode_t mode, int *fd);
 		size_t *bytes_read);
 
 int sys_read(int fd, void *buf, size_t count, ssize_t *bytes_read);
+[[gnu::weak]] int sys_readv(int fd, const struct iovec *iovs, int iovc, ssize_t *bytes_read);
 
 int sys_write(int fd, const void *buf, size_t count, ssize_t *bytes_written);
 [[gnu::weak]] int sys_pread(int fd, void *buf, size_t n, off_t off, ssize_t *bytes_read);
@@ -75,7 +74,9 @@ int sys_close(int fd);
 [[gnu::weak]] int sys_openat(int dirfd, const char *path, int flags, mode_t mode, int *fd);
 [[gnu::weak]] int sys_socket(int family, int type, int protocol, int *fd);
 [[gnu::weak]] int sys_msg_send(int fd, const struct msghdr *hdr, int flags, ssize_t *length);
+[[gnu::weak]] ssize_t sys_sendto(int fd, const void *buffer, size_t size, int flags, const struct sockaddr *sock_addr, socklen_t addr_length, ssize_t *length);
 [[gnu::weak]] int sys_msg_recv(int fd, struct msghdr *hdr, int flags, ssize_t *length);
+[[gnu::weak]] ssize_t sys_recvfrom(int fd, void *buffer, size_t size, int flags, struct sockaddr *sock_addr, socklen_t *addr_length, ssize_t *length);
 [[gnu::weak]] int sys_listen(int fd, int backlog);
 [[gnu::weak]] gid_t sys_getgid();
 [[gnu::weak]] gid_t sys_getegid();
@@ -84,8 +85,8 @@ int sys_close(int fd);
 [[gnu::weak]] pid_t sys_getpid();
 [[gnu::weak]] pid_t sys_gettid();
 [[gnu::weak]] pid_t sys_getppid();
-[[gnu::weak]] pid_t sys_getpgid(pid_t pid, pid_t *pgid);
-[[gnu::weak]] pid_t sys_getsid(pid_t pid, pid_t *sid);
+[[gnu::weak]] int sys_getpgid(pid_t pid, pid_t *pgid);
+[[gnu::weak]] int sys_getsid(pid_t pid, pid_t *sid);
 [[gnu::weak]] int sys_setpgid(pid_t pid, pid_t pgid);
 [[gnu::weak]] int sys_setuid(uid_t uid);
 [[gnu::weak]] int sys_seteuid(uid_t euid);
@@ -95,8 +96,6 @@ int sys_close(int fd);
 [[gnu::weak]] void sys_yield();
 [[gnu::weak]] int sys_sleep(time_t *secs, long *nanos);
 [[gnu::weak]] int sys_fork(pid_t *child);
-[[gnu::weak]] int sys_clone(void *tcb, pid_t *pid_out, void *stack);
-[[gnu::weak]] int sys_prepare_stack(void **stack, void *entry, void *user_arg, void* tcb, size_t *stack_size, size_t *guard_size);
 [[gnu::weak]] int sys_execve(const char *path, char *const argv[], char *const envp[]);
 [[gnu::weak]] int sys_pselect(int num_fds, fd_set *read_set, fd_set *write_set,
 		fd_set *except_set, const struct timespec *timeout, const sigset_t *sigmask, int *num_events);
@@ -105,6 +104,10 @@ int sys_close(int fd);
 [[gnu::weak]] int sys_setrlimit(int resource, const struct rlimit *limit);
 [[gnu::weak]] int sys_getpriority(int which, id_t who, int *value);
 [[gnu::weak]] int sys_setpriority(int which, id_t who, int prio);
+[[gnu::weak]] int sys_getschedparam(void *tcb, int *policy, struct sched_param *param);
+[[gnu::weak]] int sys_setschedparam(void *tcb, int policy, const struct sched_param *param);
+[[gnu::weak]] int sys_get_max_priority(int policy, int *out);
+[[gnu::weak]] int sys_get_min_priority(int policy, int *out);
 [[gnu::weak]] int sys_getcwd(char *buffer, size_t size);
 [[gnu::weak]] int sys_chdir(const char *path);
 [[gnu::weak]] int sys_fchdir(int fd);
@@ -127,7 +130,12 @@ int sys_close(int fd);
 [[gnu::weak]] int sys_fchmod(int fd, mode_t mode);
 [[gnu::weak]] int sys_fchmodat(int fd, const char *pathname, mode_t mode, int flags);
 [[gnu::weak]] int sys_utimensat(int dirfd, const char *pathname, const struct timespec times[2], int flags);
+[[gnu::weak]] int sys_mlock(const void *addr, size_t length);
+[[gnu::weak]] int sys_munlock(const void *addr, size_t length);
 [[gnu::weak]] int sys_mlockall(int flags);
+[[gnu::weak]] int sys_mlock(const void *addr, size_t len);
+[[gnu::weak]] int sys_munlockall(void);
+[[gnu::weak]] int sys_mincore(void *addr, size_t length, unsigned char *vec);
 
 // mlibc assumes that anonymous memory returned by sys_vm_map() is zeroed by the kernel / whatever is behind the sysdeps
 int sys_vm_map(void *hint, size_t size, int prot, int flags, int fd, off_t offset, void **window);
@@ -141,6 +149,7 @@ int sys_vm_unmap(void *pointer, size_t size);
 [[gnu::weak]] int sys_tcgetattr(int fd, struct termios *attr);
 [[gnu::weak]] int sys_tcsetattr(int, int, const struct termios *attr);
 [[gnu::weak]] int sys_tcflow(int, int);
+[[gnu::weak]] int sys_tcflush(int fd, int queue);
 [[gnu::weak]] int sys_tcdrain(int);
 [[gnu::weak]] int sys_pipe(int *fds, int flags);
 [[gnu::weak]] int sys_socketpair(int domain, int type_and_flags, int proto, int *fds);
@@ -154,8 +163,11 @@ int sys_vm_unmap(void *pointer, size_t size);
 		sigset_t *__restrict retrieve);
 [[gnu::weak]] int sys_sigaction(int, const struct sigaction *__restrict,
 		struct sigaction *__restrict);
+// NOTE: POSIX says that behavior of timeout = nullptr is unspecified. We treat this case
+// as an infinite timeout, making sigtimedwait(..., nullptr) equivalent to sigwaitinfo(...)
+[[gnu::weak]] int sys_sigtimedwait(const sigset_t *__restrict set, siginfo_t *__restrict info, const struct timespec *__restrict timeout, int *out_signal);
 [[gnu::weak]] int sys_kill(int, int);
-[[gnu::weak]] int sys_accept(int fd, int *newfd, struct sockaddr *addr_ptr, socklen_t *addr_length);
+[[gnu::weak]] int sys_accept(int fd, int *newfd, struct sockaddr *addr_ptr, socklen_t *addr_length, int flags);
 [[gnu::weak]] int sys_bind(int fd, const struct sockaddr *addr_ptr, socklen_t addr_length);
 [[gnu::weak]] int sys_connect(int fd, const struct sockaddr *addr_ptr, socklen_t addr_length);
 [[gnu::weak]] int sys_sockname(int fd, struct sockaddr *addr_ptr, socklen_t max_addr_length,
@@ -184,14 +196,32 @@ int sys_vm_unmap(void *pointer, size_t size);
 
 [[gnu::weak]] int sys_getitimer(int which, struct itimerval *curr_value);
 [[gnu::weak]] int sys_setitimer(int which, const struct itimerval *new_value, struct itimerval *old_value);
+[[gnu::weak]] int sys_timer_create(clockid_t clk, struct sigevent *__restrict evp, timer_t *__restrict res);
+[[gnu::weak]] int sys_timer_settime(timer_t t, int flags, const struct itimerspec *__restrict val, struct itimerspec *__restrict old);
+[[gnu::weak]] int sys_timer_delete(timer_t t);
 [[gnu::weak]] int sys_times(struct tms *tms, clock_t *out);
 [[gnu::weak]] int sys_uname(struct utsname *buf);
 [[gnu::weak]] int sys_pause();
 
 [[gnu::weak]] int sys_setresuid(uid_t ruid, uid_t euid, uid_t suid);
 [[gnu::weak]] int sys_setresgid(gid_t rgid, gid_t egid, gid_t sgid);
+[[gnu::weak]] int sys_getresuid(uid_t *ruid, uid_t *euid, uid_t *suid);
+[[gnu::weak]] int sys_getresgid(gid_t *rgid, gid_t *egid, gid_t *sgid);
 [[gnu::weak]] int sys_setreuid(uid_t ruid, uid_t euid);
 [[gnu::weak]] int sys_setregid(gid_t rgid, gid_t egid);
+
+[[gnu::weak]] int sys_poll(struct pollfd *fds, nfds_t count, int timeout, int *num_events);
+
+[[gnu::weak]] int sys_if_indextoname(unsigned int index, char *name);
+[[gnu::weak]] int sys_if_nametoindex(const char *name, unsigned int *ret);
+
+[[gnu::weak]] int sys_ptsname(int fd, char *buffer, size_t length);
+[[gnu::weak]] int sys_unlockpt(int fd);
+
+[[gnu::weak]] int sys_thread_setname(void *tcb, const char *name);
+[[gnu::weak]] int sys_thread_getname(void *tcb, char *name, size_t size);
+
+[[gnu::weak]] int sys_sysconf(int num, long *ret);
 
 } //namespace mlibc
 

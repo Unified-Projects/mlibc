@@ -6,12 +6,18 @@ libc_sources += files(
 	'generic/stdio_ext-stubs.cpp',
 	'generic/sys-ioctl.cpp',
 	'generic/err.cpp',
+	'generic/error.cpp',
 	'generic/resolv-stubs.cpp',
 	'generic/shadow-stubs.cpp',
 	'generic/printf.cpp',
 	'generic/glibc-signal.cpp',
 	'generic/execinfo.cpp',
 	'generic/string.cpp',
+	'generic/personality.cpp',
+	'generic/gshadow.cpp',
+	'generic/sys-timex.cpp',
+	'generic/glibc-assert.cpp',
+	'generic/malloc.cpp',
 )
 
 if not no_headers
@@ -19,6 +25,7 @@ if not no_headers
 		'include/getopt.h',
 		'include/stdio_ext.h',
 		'include/err.h',
+		'include/error.h',
 		'include/paths.h',
 		'include/sysexits.h',
 		'include/resolv.h',
@@ -43,6 +50,9 @@ if not no_headers
 		'include/sys/personality.h',
 		'include/sys/timeb.h',
 		'include/sys/mtio.h',
+		'include/sys/endian.h',
+		'include/sys/timex.h',
+		'include/sys/kd.h',
 		subdir: 'sys'
 	)
 	install_headers(
@@ -65,10 +75,13 @@ if not no_headers
 	)
 	install_headers(
 		'include/netinet/in_systm.h',
+		'include/netinet/icmp6.h',
 		subdir: 'netinet'
 	)
 	install_headers(
 		'include/bits/glibc/glibc_signal.h',
+		'include/bits/glibc/glibc_assert.h',
+		'include/bits/glibc/glibc_malloc.h',
 		subdir: 'bits/glibc'
 	)
 endif

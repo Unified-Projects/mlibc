@@ -94,6 +94,9 @@ typedef struct {
 extern "C" {
 #endif
 
+// Argument for signal()
+typedef void (*__sighandler) (int);
+
 #define SIG_ERR ((__sighandler)(void *)(-1))
 #define SIG_DFL ((__sighandler)(void *)(0))
 #define SIG_IGN ((__sighandler)(void *)(1))
@@ -165,10 +168,20 @@ typedef struct __stack {
 #define SEGV_ACCERR 2
 
 #define BUS_ADRALN 1
+#define BUS_ADRERR 2
+#define BUS_OBJERR 3
+#define BUS_MCEERR_AR 4
+#define BUS_MCEERR_AO 5
 
 #define ILL_ILLOPC 1
+#define ILL_ILLOPN 2
+#define ILL_ILLADR 3
 #define ILL_ILLTRP 4
 #define ILL_PRVOPC 5
+#define ILL_PRVREG 6
+#define ILL_COPROC 7
+#define ILL_BADSTK 8
+#define ILL_BADIADDR 9
 
 #define NSIG 65
 
@@ -262,7 +275,7 @@ struct _fpstate {
 
 typedef struct {
 	unsigned long gregs[NGREG];
-	struct _fpstate *fpstate;
+	struct _fpstate *fpregs;
 	unsigned long __reserved1[8];
 } mcontext_t;
 
@@ -288,7 +301,7 @@ struct __riscv_d_ext_state {
 };
 
 struct __riscv_q_ext_state {
-	uint64_t f[64] __attribute__((aligned(16)));
+	uint64_t f[64] __attribute__((__aligned__(16)));
 	uint32_t fcsr;
 	uint32_t reserved[3];
 };

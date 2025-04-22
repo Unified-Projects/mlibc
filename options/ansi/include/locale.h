@@ -55,6 +55,8 @@ struct lconv {
 	char int_n_sign_posn;
 };
 
+#ifndef __MLIBC_ABI_ONLY
+
 // [C11/7.11.1] setlocale() function
 
 char *setlocale(int category, const char *locale);
@@ -63,9 +65,11 @@ char *setlocale(int category, const char *locale);
 
 struct lconv *localeconv(void);
 
+#endif /* !__MLIBC_ABI_ONLY */
+
 // posix extension
 
-#ifdef __MLIBC_POSIX_OPTION
+#if __MLIBC_POSIX_OPTION
 #	include <bits/posix/posix_locale.h>
 #endif // __MLIBC_POSIX_OPTION
 

@@ -38,11 +38,11 @@ struct sockaddr {
 		~(__alignof__(size_t) - 1))
 
 // Basic macros to return content and padding size of a control message.
-#define CMSG_LEN(s) (sizeof(struct cmsghdr) + (s))
-#define CMSG_SPACE(s) (sizeof(struct cmsghdr) + CMSG_ALIGN(s))
+#define CMSG_LEN(s) (CMSG_ALIGN(sizeof(struct cmsghdr)) + (s))
+#define CMSG_SPACE(s) (CMSG_ALIGN(sizeof(struct cmsghdr)) + CMSG_ALIGN(s))
 
 // Provides access to the data of a control message.
-#define CMSG_DATA(c) ((char *)(c) + sizeof(struct cmsghdr))
+#define CMSG_DATA(c) ((char *)(c) + CMSG_ALIGN(sizeof(struct cmsghdr)))
 
 #define __MLIBC_CMSG_NEXT(c) ((char *)(c) + CMSG_ALIGN((c)->cmsg_len))
 #define __MLIBC_MHDR_LIMIT(m) ((char *)(m)->msg_control + (m)->msg_controllen)
@@ -71,6 +71,8 @@ struct ucred {
 	gid_t gid;
 };
 
+#ifndef __MLIBC_ABI_ONLY
+
 int accept(int, struct sockaddr *__restrict, socklen_t *__restrict);
 int accept4(int, struct sockaddr *__restrict, socklen_t *__restrict, int);
 int bind(int, const struct sockaddr *, socklen_t);
@@ -92,6 +94,8 @@ int shutdown(int, int);
 int sockatmark(int);
 int socket(int, int, int);
 int socketpair(int, int, int, int [2]);
+
+#endif /* !__MLIBC_ABI_ONLY */
 
 #ifdef __cplusplus
 }

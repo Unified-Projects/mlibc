@@ -18,6 +18,7 @@
 #define M_2_SQRTPI      1.12837916709551257390
 #define M_SQRT2         1.41421356237309504880
 #define M_SQRT1_2       0.70710678118654752440
+#define M_PIl           3.141592653589793238462643383279502884L
 
 // The following two definitions are from musl.
 #define FP_ILOGBNAN (-1 - (int)(((unsigned)-1) >> 1))
@@ -51,6 +52,8 @@ typedef float float_t;
 #define FP_NORMAL 4
 #define FP_SUBNORMAL 8
 #define FP_ZERO 16
+
+#ifndef __MLIBC_ABI_ONLY
 
 int __fpclassify(double x);
 int __fpclassifyf(float x);
@@ -361,6 +364,11 @@ long double fminl(long double x, long double y);
 double fma(double, double, double);
 float fmaf(float, float, float);
 long double fmal(long double, long double, long double);
+
+extern int signgam;
+#define __signgam signgam
+
+#endif /* !__MLIBC_ABI_ONLY */
 
 #ifdef __cplusplus
 }

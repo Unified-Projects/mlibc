@@ -23,11 +23,17 @@ struct spwd {
 
 #define SHADOW _PATH_SHADOW
 
+#ifndef __MLIBC_ABI_ONLY
+
 int putspent(const struct spwd *, FILE *);
 int lckpwdf(void);
 int ulckpwdf(void);
 struct spwd *getspnam(const char *);
+int getspnam_r(const char *, struct spwd *, char *, size_t, struct spwd **);
+struct spwd *fgetspent(FILE *);
 void endspent(void);
+
+#endif /* !__MLIBC_ABI_ONLY */
 
 #ifdef __cplusplus
 }

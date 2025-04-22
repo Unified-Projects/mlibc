@@ -5,7 +5,9 @@
 extern "C" {
 #endif
 
-#define NS_PACKETSZ	512
+#define NS_PACKETSZ 512
+#define NS_MAXDNAME 1025
+#define NS_MAXLABEL 63
 
 typedef	enum __ns_rcode {
 	ns_r_noerror = 0,
@@ -92,6 +94,8 @@ typedef enum __ns_class {
 	ns_c_max = 65536
 } ns_class;
 
+#ifndef __MLIBC_ABI_ONLY
+
 #define NS_GET16(s, cp) (void)((s) = ns_get16(((cp) += 2) - 2))
 #define NS_GET32(l, cp) (void)((l) = ns_get32(((cp) += 4) - 4))
 #define NS_PUT16(s, cp) ns_put16((s), ((cp) += 2) - 2)
@@ -101,6 +105,8 @@ unsigned ns_get16(const unsigned char *);
 unsigned long ns_get32(const unsigned char *);
 void ns_put16(unsigned, unsigned char *);
 void ns_put32(unsigned long, unsigned char *);
+
+#endif /* !__MLIBC_ABI_ONLY */
 
 typedef struct {
 	unsigned	id :16;
@@ -134,6 +140,7 @@ typedef struct {
 } HEADER;
 
 #define PACKETSZ	NS_PACKETSZ
+#define MAXDNAME	NS_MAXDNAME
 
 #define NOERROR		ns_r_noerror
 #define FORMERR		ns_r_formerr

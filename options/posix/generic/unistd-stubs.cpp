@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <unistd.h>
 #include <limits.h>
 #include <termios.h>
@@ -13,6 +14,7 @@
 #include <mlibc/arch-defs.hpp>
 #include <mlibc/debug.hpp>
 #include <mlibc/posix-sysdeps.hpp>
+#include <mlibc/bsd-sysdeps.hpp>
 #include <mlibc/thread.hpp>
 
 unsigned int alarm(unsigned int seconds) {
@@ -596,8 +598,8 @@ int setpgid(pid_t pid, pid_t pgid) {
 	return 0;
 }
 
-pid_t setpgrp(pid_t pid, pid_t pgid) {
-	return setpgid(pid, pgid);
+pid_t setpgrp(void) {
+	return setpgid(0, 0);
 }
 
 int setregid(gid_t rgid, gid_t egid) {
@@ -675,7 +677,23 @@ void sync(void) {
 	}
 }
 
-unsigned long sysconf(int number) {
+long sysconf(int number) {
+	if(mlibc::sys_sysconf) {
+		long ret = 0;
+
+		int e = mlibc::sys_sysconf(number, &ret);
+
+		if(e && e != EINVAL) {
+			errno = e;
+			return -1;
+		}
+
+		if(e != EINVAL) {
+			return ret;
+		}
+	}
+
+	/* default return values, if not overriden by sysdep */
 	switch(number) {
 		case _SC_ARG_MAX:
 			// On linux, it is defined to 2097152 in most cases, so define it to be 2097152
@@ -683,25 +701,26 @@ unsigned long sysconf(int number) {
 		case _SC_PAGE_SIZE:
 			return mlibc::page_size;
 		case _SC_OPEN_MAX:
-			// TODO: actually return a proper value for _SC_OPEN_MAX
-			mlibc::infoLogger() << "\e[31mmlibc: sysconf(_SC_OPEN_MAX) returns arbitrary value 256\e[39m" << frg::endlog;
+			mlibc::infoLogger() << "\e[31mmlibc: sysconf(_SC_OPEN_MAX) returns fallback value 256\e[39m" << frg::endlog;
 			return 256;
 		case _SC_PHYS_PAGES:
-			// TODO: actually return a proper value for _SC_PHYS_PAGES
-			mlibc::infoLogger() << "\e[31mmlibc: sysconf(_SC_PHYS_PAGES) returns arbitrary value 1024\e[39m" << frg::endlog;
+			mlibc::infoLogger() << "\e[31mmlibc: sysconf(_SC_PHYS_PAGES) returns fallback value 1024\e[39m" << frg::endlog;
 			return 1024;
 		case _SC_NPROCESSORS_ONLN:
-			// TODO: actually return a proper value for _SC_NPROCESSORS_ONLN
-			mlibc::infoLogger() << "\e[31mmlibc: sysconf(_SC_NPROCESSORS_ONLN) unconditionally returns 1\e[39m" << frg::endlog;
+			mlibc::infoLogger() << "\e[31mmlibc: sysconf(_SC_NPROCESSORS_ONLN) returns fallback value 1\e[39m" << frg::endlog;
 			return 1;
 		case _SC_GETPW_R_SIZE_MAX:
+			mlibc::infoLogger() << "\e[31mmlibc: sysconf(_SC_GETPW_R_SIZE_MAX) returns fallback value 1024\e[39m" << frg::endlog;
 			return 1024;
 		case _SC_GETGR_R_SIZE_MAX:
+			mlibc::infoLogger() << "\e[31mmlibc: sysconf(_SC_GETGR_R_SIZE_MAX) returns fallback value 1024\e[39m" << frg::endlog;
 			return 1024;
 		case _SC_CHILD_MAX:
+			mlibc::infoLogger() << "\e[31mmlibc: sysconf(_SC_CHILD_MAX) returns fallback value 25\e[39m" << frg::endlog;
 			// On linux, it is defined to 25 in most cases, so define it to be 25
 			return 25;
 		case _SC_JOB_CONTROL:
+			mlibc::infoLogger() << "\e[31mmlibc: sysconf(_SC_JOB_CONTROL) returns fallback value 1\e[39m" << frg::endlog;
 			// If 1, job control is supported
 			return 1;
 		case _SC_CLK_TCK:
@@ -709,26 +728,33 @@ unsigned long sysconf(int number) {
 			mlibc::infoLogger() << "\e[31mmlibc: sysconf(_SC_CLK_TCK) is obsolete and returns arbitrary value 1000000\e[39m" << frg::endlog;
 			return 1000000;
 		case _SC_NGROUPS_MAX:
+			mlibc::infoLogger() << "\e[31mmlibc: sysconf(_SC_NGROUPS_MAX) returns fallback value 65536\e[39m" << frg::endlog;
 			// On linux, it is defined to 65536 in most cases, so define it to be 65536
 			return 65536;
 		case _SC_RE_DUP_MAX:
+			mlibc::infoLogger() << "\e[31mmlibc: sysconf(_SC_RE_DUP_MAX) returns fallback value RE_DUP_MAX\e[39m" << frg::endlog;
 			return RE_DUP_MAX;
 		case _SC_LINE_MAX:
+			mlibc::infoLogger() << "\e[31mmlibc: sysconf(_SC_LINE_MAX) returns fallback value 2048\e[39m" << frg::endlog;
 			// Linux defines it as 2048.
 			return 2048;
 		case _SC_XOPEN_CRYPT:
-#ifdef __MLIBC_CRYPT_OPTION
+#if __MLIBC_CRYPT_OPTION
 			return _XOPEN_CRYPT;
 #else
 			return -1;
-#endif
+#endif /* __MLIBC_CRYPT_OPTION */
 		case _SC_NPROCESSORS_CONF:
 			// TODO: actually return a proper value for _SC_NPROCESSORS_CONF
-			mlibc::infoLogger() << "\e[31mmlibc: sysconf(_SC_NPROCESSORS_CONF) unconditionally returns 1\e[39m" << frg::endlog;
+			mlibc::infoLogger() << "\e[31mmlibc: sysconf(_SC_NPROCESSORS_CONF) unconditionally returns fallback value 1\e[39m" << frg::endlog;
 			return 1;
+		case _SC_HOST_NAME_MAX:
+			mlibc::infoLogger() << "\e[31mmlibc: sysconf(_SC_HOST_NAME_MAX) unconditionally returns fallback value 256\e[39m" << frg::endlog;
+			return 256;
 		default:
-			mlibc::panicLogger() << "\e[31mmlibc: sysconf() call is not implemented, number: " << number << "\e[39m" << frg::endlog;
-			__builtin_unreachable();
+			mlibc::infoLogger() << "\e[31mmlibc: sysconf() call is not implemented, number: " << number << "\e[39m" << frg::endlog;
+			errno = EINVAL;
+			return -1;
 	}
 }
 
@@ -1150,19 +1176,44 @@ int setdomainname(const char *, size_t) {
 	__builtin_unreachable();
 }
 
-int getresuid(uid_t *, uid_t *, uid_t *) {
-	__ensure(!"Not implemented");
-	__builtin_unreachable();
+int getresuid(uid_t *ruid, uid_t *euid, uid_t *suid) {
+	MLIBC_CHECK_OR_ENOSYS(mlibc::sys_getresuid, -1);
+	if(int e = mlibc::sys_getresuid(ruid, euid, suid); e) {
+		errno = e;
+		return -1;
+	}
+	return 0;
 }
 
-int getresgid(gid_t *, gid_t *, gid_t *) {
-	__ensure(!"Not implemented");
-	__builtin_unreachable();
+int getresgid(gid_t *rgid, gid_t *egid, gid_t *sgid) {
+	MLIBC_CHECK_OR_ENOSYS(mlibc::sys_getresgid, -1);
+	if(int e = mlibc::sys_getresgid(rgid, egid, sgid); e) {
+		errno = e;
+		return -1;
+	}
+	return 0;
 }
 
-#ifdef __MLIBC_CRYPT_OPTION
+#if __MLIBC_CRYPT_OPTION
 void encrypt(char[64], int) {
 	__ensure(!"Not implemented");
 	__builtin_unreachable();
+}
+#endif
+
+#if __MLIBC_BSD_OPTION
+void *sbrk(intptr_t increment) {
+	if(increment) {
+		errno = ENOMEM;
+		return (void *)-1;
+	}
+
+	MLIBC_CHECK_OR_ENOSYS(mlibc::sys_brk, (void *)-1);
+	void *out;
+	if(int e = mlibc::sys_brk(&out); e) {
+		errno = e;
+		return (void *)-1;
+	}
+	return out;
 }
 #endif

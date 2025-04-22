@@ -10,7 +10,6 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
-#include <asm/ioctls.h>
 
 #include <frg/small_vector.hpp>
 #include <mlibc/allocator.hpp>
@@ -177,6 +176,12 @@ int mkstemp(char *path) {
 	return mkostemp(path, 0);
 }
 
+int mkostemps(char *pattern, int suffixlen, int flags) {
+	(void)suffixlen;
+	mlibc::infoLogger() << "mlibc: mkostemps ignores suffixlen!" << frg::endlog;
+	return mkostemp(pattern, flags);
+}
+
 char *mkdtemp(char *pattern) {
 	mlibc::infoLogger() << "mlibc mkdtemp(" << pattern << ") called" << frg::endlog;
 	auto n = strlen(pattern);
@@ -329,9 +334,10 @@ char *realpath(const char *path, char *out) {
 				resolv[rsz - 1] = 0;
 
 				auto lsz = lnk.size();
-				lnk.resize((lsz - ls) + sz);
+				lnk.resize((lsz - ls) + sz + 1);
 				memmove(lnk.data() + sz, lnk.data() + ls, lsz - ls);
 				memcpy(lnk.data(), path, sz);
+				lnk[(lsz - ls) + sz] = 0;
 
 				ls = 0;
 
@@ -411,22 +417,24 @@ char *realpath(const char *path, char *out) {
 // ----------------------------------------------------------------------------
 
 int ptsname_r(int fd, char *buffer, size_t length) {
-	int index;
-	if(ioctl(fd, TIOCGPTN, &index))
-		return -1;
-	if((size_t)snprintf(buffer, length, "/dev/pts/%d", index) >= length) {
-		errno = ERANGE;
-		return -1;
-	}
+	auto sysdep = MLIBC_CHECK_OR_ENOSYS(mlibc::sys_ptsname, ENOSYS);
+
+	if(int e = sysdep(fd, buffer, length); e)
+		return e;
+
 	return 0;
 }
 
 char *ptsname(int fd) {
-	int index;
 	static char buffer[128];
-	if(ioctl(fd, TIOCGPTN, &index))
+
+	auto sysdep = MLIBC_CHECK_OR_ENOSYS(mlibc::sys_ptsname, NULL);
+
+	if(int e = sysdep(fd, buffer, 128); e) {
+		errno = e;
 		return NULL;
-	snprintf(buffer, 128, "/dev/pts/%d", index);
+	}
+
 	return buffer;
 }
 
@@ -441,17 +449,23 @@ int posix_openpt(int flags) {
 }
 
 int unlockpt(int fd) {
-	int unlock = 0;
-	return ioctl(fd, TIOCSPTLCK, &unlock);
+	auto sysdep = MLIBC_CHECK_OR_ENOSYS(mlibc::sys_unlockpt, -1);
+
+	if(int e = sysdep(fd); e) {
+		errno = e;
+		return -1;
+	}
+
+	return 0;
 }
 
 int grantpt(int) {
 	return 0;
 }
 
-double strtod_l(const char *__restrict__, char ** __restrict__, locale_t) {
-	__ensure(!"Not implemented");
-	__builtin_unreachable();
+double strtod_l(const char *__restrict__ nptr, char ** __restrict__ endptr, locale_t) {
+	mlibc::infoLogger() << "mlibc: strtod_l ignores locale!" << frg::endlog;
+	return strtod(nptr, endptr);
 }
 
 long double strtold_l(const char *__restrict__, char ** __restrict__, locale_t) {
@@ -490,7 +504,6 @@ void *reallocarray(void *ptr, size_t m, size_t n) {
 	return realloc(ptr, m * n);
 }
 
-char *canonicalize_file_name(const char *) {
-	__ensure(!"Not implemented");
-	__builtin_unreachable();
+char *canonicalize_file_name(const char *name) {
+	return realpath(name, NULL);
 }

@@ -11,6 +11,12 @@ int creat(const char *pathname, mode_t mode) {
 	return open(pathname, O_CREAT|O_WRONLY|O_TRUNC, mode);
 }
 
+int fallocate(int, int, off_t, off_t) {
+	mlibc::infoLogger() << "mlibc: fallocate() is a no-op" << frg::endlog;
+	errno = ENOSYS;
+	return -1;
+}
+
 int fcntl(int fd, int command, ...) {
 	va_list args;
 	va_start(args, command);
@@ -68,6 +74,16 @@ int name_to_handle_at(int, const char *, struct file_handle *, int *, int) {
 }
 
 int open_by_handle_at(int, struct file_handle *, int) {
+	__ensure(!"Not implemented");
+	__builtin_unreachable();
+}
+
+ssize_t splice(int, off_t *, int, off_t *, size_t, unsigned int) {
+	__ensure(!"Not implemented");
+	__builtin_unreachable();
+}
+
+ssize_t vmsplice(int, const struct iovec *, size_t, unsigned int) {
 	__ensure(!"Not implemented");
 	__builtin_unreachable();
 }

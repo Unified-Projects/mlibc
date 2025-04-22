@@ -33,6 +33,8 @@ typedef struct {
 // TODO: this should not be a compile-time constant
 #define MB_CUR_MAX 4
 
+#ifndef __MLIBC_ABI_ONLY
+
 // [7.22.1] Numeric conversion functions
 
 double atof(const char *string);
@@ -65,13 +67,13 @@ int posix_memalign(void **, size_t, size_t);
 
 // [7.22.4] Communication with the environment
 
-__attribute__ (( noreturn )) void abort(void);
+__attribute__((__noreturn__)) void abort(void);
 int atexit(void (*func)(void));
 int at_quick_exit(void (*func)(void));
-__attribute__ (( noreturn )) void exit(int status);
-__attribute__ (( noreturn )) void _Exit(int status);
+__attribute__((__noreturn__)) void exit(int status);
+__attribute__((__noreturn__)) void _Exit(int status);
 char *getenv(const char *name);
-__attribute__ (( noreturn )) void quick_exit(int status);
+__attribute__((__noreturn__)) void quick_exit(int status);
 int system(const char *string);
 
 // GLIBC extension.
@@ -108,11 +110,17 @@ int wctomb(char *mb_chr, wchar_t wc);
 size_t mbstowcs(wchar_t *__restrict wc_string, const char *__restrict mb_string, size_t max_size);
 size_t wcstombs(char *mb_string, const wchar_t *__restrict wc_string, size_t max_size);
 
+#endif /* !__MLIBC_ABI_ONLY */
+
+#if __MLIBC_GLIBC_OPTION
+typedef int (*comparison_fn_t) (const void *, const void *);
+#endif
+
 #ifdef __cplusplus
 }
 #endif
 
-#ifdef __MLIBC_POSIX_OPTION
+#if __MLIBC_POSIX_OPTION
 #	include <bits/posix/posix_stdlib.h>
 #endif
 

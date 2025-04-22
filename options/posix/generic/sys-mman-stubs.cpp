@@ -18,9 +18,13 @@ int mprotect(void *pointer, size_t size, int prot) {
 	return 0;
 }
 
-int mlock(const void *, size_t) {
-	__ensure(!"Not implemented");
-	__builtin_unreachable();
+int mlock(const void *addr, size_t len) {
+	MLIBC_CHECK_OR_ENOSYS(mlibc::sys_mlock, -1);
+	if(int e = mlibc::sys_mlock(addr, len); e) {
+		errno = e;
+		return -1;
+	}
+	return 0;
 }
 
 int mlockall(int flags) {
@@ -32,14 +36,22 @@ int mlockall(int flags) {
 	return 0;
 }
 
-int munlock(const void *, size_t) {
-	__ensure(!"Not implemented");
-	__builtin_unreachable();
+int munlock(const void *addr, size_t len) {
+	MLIBC_CHECK_OR_ENOSYS(mlibc::sys_munlock, -1);
+	if(int e = mlibc::sys_munlock(addr, len); e) {
+		errno = e;
+		return -1;
+	}
+	return 0;
 }
 
 int munlockall(void) {
-	__ensure(!"Not implemented");
-	__builtin_unreachable();
+	MLIBC_CHECK_OR_ENOSYS(mlibc::sys_munlockall, -1);
+	if(int e = mlibc::sys_munlockall(); e) {
+		errno = e;
+		return -1;
+	}
+	return 0;
 }
 
 
@@ -131,7 +143,7 @@ int shm_unlink(const char *name) {
 	return unlink(name);
 }
 
-#ifdef __MLIBC_LINUX_OPTION
+#if __MLIBC_LINUX_OPTION
 int memfd_create(const char *name, unsigned int flags) {
 	int ret = -1;
 
@@ -154,8 +166,12 @@ int madvise(void *addr, size_t length, int advice) {
 	return 0;
 }
 
-int mincore(void *, size_t, unsigned char *) {
-	__ensure(!"Not implemented");
-	__builtin_unreachable();
+int mincore(void *addr, size_t length, unsigned char *vec) {
+	MLIBC_CHECK_OR_ENOSYS(mlibc::sys_munlockall, -1);
+	if(int e = mlibc::sys_mincore(addr, length, vec); e) {
+		errno = e;
+		return -1;
+	}
+	return 0;
 }
-#endif
+#endif /* __MLIBC_LINUX_OPTION */

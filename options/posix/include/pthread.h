@@ -3,9 +3,11 @@
 #define _PTHREAD_H
 
 #include <abi-bits/clockid_t.h>
+#include <bits/cpu_set.h>
 // TODO: pthread is not required to define size_t.
 #include <bits/size_t.h>
 #include <bits/posix/pthread_t.h>
+#include <bits/threads.h>
 
 #include <signal.h>
 #include <stdint.h>
@@ -18,9 +20,8 @@
 extern "C" {
 #endif
 
-// values for pthread_attr_{get,set}detachstate().
-#define PTHREAD_CREATE_JOINABLE 0
-#define PTHREAD_CREATE_DETACHED 1
+#define PTHREAD_CREATE_JOINABLE __MLIBC_THREAD_CREATE_JOINABLE
+#define PTHREAD_CREATE_DETACHED __MLIBC_THREAD_CREATE_DETACHED
 
 // Values for pthread_attr_{get,set}scope
 #define PTHREAD_SCOPE_SYSTEM 0
@@ -39,23 +40,23 @@ extern "C" {
 #define PTHREAD_CANCEL_DISABLE 1
 
 // values for pthread_mutexattr_{get,set}type().
-#define PTHREAD_MUTEX_DEFAULT 0
-#define PTHREAD_MUTEX_NORMAL 0
-#define PTHREAD_MUTEX_ERRORCHECK 1
-#define PTHREAD_MUTEX_RECURSIVE 2
+#define PTHREAD_MUTEX_DEFAULT __MLIBC_THREAD_MUTEX_DEFAULT
+#define PTHREAD_MUTEX_NORMAL __MLIBC_THREAD_MUTEX_NORMAL
+#define PTHREAD_MUTEX_ERRORCHECK __MLIBC_THREAD_MUTEX_ERRORCHECK
+#define PTHREAD_MUTEX_RECURSIVE __MLIBC_THREAD_MUTEX_RECURSIVE
 
 // values for pthread_mutexattr_{get,set}robust().
-#define PTHREAD_MUTEX_STALLED 0
-#define PTHREAD_MUTEX_ROBUST 1
+#define PTHREAD_MUTEX_STALLED __MLIBC_THREAD_MUTEX_STALLED
+#define PTHREAD_MUTEX_ROBUST __MLIBC_THREAD_MUTEX_ROBUST
 
 // values for pthread_mutexattr_{get,set}pshared().
-#define PTHREAD_PROCESS_PRIVATE 0
-#define PTHREAD_PROCESS_SHARED 1
+#define PTHREAD_PROCESS_PRIVATE __MLIBC_THREAD_PROCESS_PRIVATE
+#define PTHREAD_PROCESS_SHARED __MLIBC_THREAD_PROCESS_SHARED
 
 // Values for pthread_mutexattr_{get,set}protocol()
-#define PTHREAD_PRIO_NONE 0
-#define PTHREAD_PRIO_INHERIT 1
-#define PTHREAD_PRIO_PROTECT 2
+#define PTHREAD_PRIO_NONE __MLIBC_THREAD_PRIO_NONE
+#define PTHREAD_PRIO_INHERIT __MLIBC_THREAD_PRIO_INHERIT
+#define PTHREAD_PRIO_PROTECT __MLIBC_THREAD_PRIO_PROTECT
 
 #define PTHREAD_ONCE_INIT {0}
 #define PTHREAD_COND_INITIALIZER {0}
@@ -77,20 +78,6 @@ extern "C" {
 #define PTHREAD_ATTR_NO_SIGMASK_NP (-1)
 
 // TODO: move to own file and include in sys/types.h
-struct __mlibc_threadattr {
-	size_t __mlibc_guardsize;
-	size_t __mlibc_stacksize;
-	void *__mlibc_stackaddr;
-	int __mlibc_detachstate;
-	int __mlibc_scope;
-	int __mlibc_inheritsched;
-	struct sched_param __mlibc_schedparam;
-	int __mlibc_schedpolicy;
-	cpu_set_t *__mlibc_cpuset;
-	size_t __mlibc_cpusetsize;
-	sigset_t __mlibc_sigmask;
-	int __mlibc_sigmaskset;
-};
 typedef struct __mlibc_threadattr pthread_attr_t;
 
 typedef uintptr_t pthread_key_t;
@@ -100,34 +87,12 @@ struct __mlibc_once {
 };
 typedef struct __mlibc_once pthread_once_t;
 
-struct  __mlibc_mutexattr {
-	int __mlibc_type;
-	int __mlibc_robust;
-	int __mlibc_protocol;
-	int __mlibc_pshared;
-	int __mlibc_prioceiling;
-};
 typedef struct __mlibc_mutexattr pthread_mutexattr_t;
 
-struct __mlibc_mutex {
-	unsigned int __mlibc_state;
-	unsigned int __mlibc_recursion;
-	unsigned int __mlibc_flags;
-	int __mlibc_prioceiling;
-};
 typedef struct __mlibc_mutex pthread_mutex_t;
 
-struct  __mlibc_condattr_struct {
-	int __mlibc_pshared;
-	clockid_t __mlibc_clock;
-};
-typedef struct __mlibc_condattr_struct pthread_condattr_t;
+typedef struct __mlibc_condattr pthread_condattr_t;
 
-struct  __mlibc_cond {
-	unsigned int __mlibc_seq;
-	unsigned int __mlibc_flags;
-	clockid_t __mlibc_clock;
-};
 typedef struct __mlibc_cond pthread_cond_t;
 
 struct  __mlibc_barrierattr_struct {
@@ -155,6 +120,8 @@ struct __mlibc_rwlockattr {
 	int __mlibc_pshared;
 };
 typedef struct __mlibc_rwlockattr pthread_rwlockattr_t;
+
+#ifndef __MLIBC_ABI_ONLY
 
 // ----------------------------------------------------------------------------
 // pthread_attr and pthread functions.
@@ -194,6 +161,7 @@ int pthread_attr_setinheritsched(pthread_attr_t *__restrict, int);
 int pthread_attr_getschedparam(const pthread_attr_t *__restrict, struct sched_param *__restrict);
 int pthread_attr_setschedparam(pthread_attr_t *__restrict, const struct sched_param *__restrict);
 
+#if __MLIBC_LINUX_OPTION
 int pthread_attr_getaffinity_np(const pthread_attr_t *__restrict, size_t, cpu_set_t *__restrict);
 int pthread_attr_setaffinity_np(pthread_attr_t *__restrict, size_t, const cpu_set_t *__restrict);
 
@@ -201,6 +169,10 @@ int pthread_attr_getsigmask_np(const pthread_attr_t *__restrict, sigset_t *__res
 int pthread_attr_setsigmask_np(pthread_attr_t *__restrict, const sigset_t *__restrict);
 
 int pthread_getattr_np(pthread_t, pthread_attr_t *);
+
+int pthread_getaffinity_np(pthread_t thread, size_t cpusetsize, cpu_set_t *cpuset);
+int pthread_setaffinity_np(pthread_t thread, size_t cpusetsize, const cpu_set_t *cpuset);
+#endif /* __MLIBC_LINUX_OPTION */
 
 // pthread functions.
 int pthread_create(pthread_t *__restrict, const pthread_attr_t *__restrict,
@@ -341,6 +313,8 @@ int pthread_rwlock_rdlock(pthread_rwlock_t *);
 int pthread_rwlock_unlock(pthread_rwlock_t *);
 
 int pthread_getcpuclockid(pthread_t, clockid_t *);
+
+#endif /* !__MLIBC_ABI_ONLY */
 
 #ifdef __cplusplus
 }
