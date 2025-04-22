@@ -7,16 +7,16 @@ extern "C" {
 
 #include <elf.h>
 #include <stddef.h>
-
+    
 #if defined(__x86_64__) || defined(__aarch64__) \
-	|| (defined(__riscv) && __riscv_xlen == 64) || defined(__loongarch64)
+	|| (defined(__riscv) && __riscv_xlen == 64)
 #	define ElfW(type) Elf64_ ## type
-#elif defined(__i386__) || defined(__m68k__)
+#elif defined(__i386__)
 #	define ElfW(type) Elf32_ ## type
 #else
 # 	error Unknown architecture
 #endif
-
+    
 struct dl_phdr_info {
 	ElfW(Addr) dlpi_addr;
 	const char *dlpi_name;
@@ -43,16 +43,12 @@ struct r_debug {
 	Elf64_Addr r_ldbase;
 };
 
-#ifndef __MLIBC_ABI_ONLY
-
-int dl_iterate_phdr(int (*__callback)(struct dl_phdr_info* __info, size_t __size, void* __data), void* __data);
+int dl_iterate_phdr(int (*callback)(struct dl_phdr_info*, size_t, void*), void* data);
 
 extern ElfW(Dyn) _DYNAMIC[];
-
-#endif /* !__MLIBC_ABI_ONLY */
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _LINK_H */
+#endif // _LINK_H

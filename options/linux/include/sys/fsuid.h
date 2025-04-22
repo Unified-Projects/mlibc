@@ -8,15 +8,11 @@
 extern "C" {
 #endif
 
-#ifndef __MLIBC_ABI_ONLY
-
-int setfsuid(uid_t __uid);
-int setfsgid(gid_t __gid);
-
-#endif /* !__MLIBC_ABI_ONLY */
+int setfsuid(uid_t uid);
+int setfsgid(gid_t gid);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _SYS_FSUID_H */
+#endif // _SYS_FSUID_H

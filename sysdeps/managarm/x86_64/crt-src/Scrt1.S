@@ -1,6 +1,5 @@
 .section .text
 .global _start
 _start:
-	mov %rsp, %rdi
-	lea main(%rip), %rsi
+	lea main(%rip), %rdi
 	call __mlibc_entry

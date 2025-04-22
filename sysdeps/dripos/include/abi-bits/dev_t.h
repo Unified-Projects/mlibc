@@ -1,1 +1,1 @@
-../../../../abis/dripos/dev_t.h
+../../../../abis/mlibc/dev_t.h

@@ -4,7 +4,6 @@
 #include <abi-bits/pid_t.h>
 #include <bits/posix/timeval.h>
 #include <bits/types.h>
-#include <paths.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,12 +23,6 @@ extern "C" {
 #define UT_LINESIZE 32
 #define UT_NAMESIZE 32
 #define UT_HOSTSIZE 256
-
-#define WTMP_FILE _PATH_WTMP
-#define WTMP_FILENAME _PATH_WTMP
-
-#define UTMP_FILE _PATH_UTMP
-#define UTMP_FILENAME _PATH_UTMP
 
 struct exit_status {
 	short int e_termination;
@@ -64,22 +57,14 @@ struct lastlog {
 #define ut_xtime ut_tv.tv_sec
 #define ut_addr ut_addr_v6[0]
 
-#ifndef __MLIBC_ABI_ONLY
-
 void setutent(void);
 struct utmp *getutent(void);
-int getutent_r(struct utmp *__buf, struct utmp **__res);
 void endutent(void);
-struct utmp *pututline(const struct utmp *__line);
-struct utmp *getutline(const struct utmp *__line);
-struct utmp *getutid(const struct utmp *__id);
-int utmpname(const char *__file);
-int login_tty(int __fd);
-
-#endif /* !__MLIBC_ABI_ONLY */
+struct utmp *pututline(const struct utmp *);
+struct utmp *getutline(const struct utmp *);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _UTMP_H */
+#endif // _UTMP_H

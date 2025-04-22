@@ -1,26 +1,11 @@
-sysdep_supported_options = {
-	'posix': true,
-	'linux': false,
-	'glibc': true,
-	'bsd': true,
-}
 
-rtld_sources += files(
+rtdl_sources += files(
 	'generic/generic.cpp'
 )
 
 libc_sources += files(
 	'generic/entry.cpp',
-	'generic/ptrace.cpp',
-	'generic/generic.cpp',
-	'generic/mntent.cpp',
-	'generic/mount.cpp',
-	'generic/reboot.cpp',
-	'generic/pty.cpp',
-	'generic/thread.cpp',
-	'generic/mac.cpp',
-	'generic/thread.S',
-	'generic/utmpx.cpp'
+	'generic/generic.cpp'
 )
 
 if not no_headers
@@ -53,49 +38,24 @@ if not no_headers
 		'include/abi-bits/utsname.h',
 		'include/abi-bits/ptrace.h',
 		'include/abi-bits/poll.h',
+		'include/abi-bits/epoll.h',
 		'include/abi-bits/packet.h',
+		'include/abi-bits/inotify.h',
 		'include/abi-bits/clockid_t.h',
-		'include/abi-bits/ipc.h',
 		'include/abi-bits/shm.h',
 		'include/abi-bits/mqueue.h',
 		'include/abi-bits/suseconds_t.h',
 		'include/abi-bits/fsfilcnt_t.h',
 		'include/abi-bits/fsblkcnt_t.h',
 		'include/abi-bits/socklen_t.h',
+		'include/abi-bits/statfs.h',
 		'include/abi-bits/statvfs.h',
-		'include/abi-bits/ioctls.h',
-		'include/abi-bits/msg.h',
-		'include/abi-bits/rlim_t.h',
-		'include/abi-bits/sigval.h',
-		'include/abi-bits/sigevent.h',
-		subdir: 'abi-bits',
-		follow_symlinks: true
+		subdir: 'abi-bits'
 	)
 	install_headers(
-		'include/sys/mac.h',
+		'include/sys/ironclad.h',
 		'include/sys/syscall.h',
-		'include/sys/reboot.h',
-		'include/sys/mount.h',
-		'include/sys/sysmacros.h',
-		'include/sys/ptrace.h',
 		subdir: 'sys'
-	)
-
-	install_headers(
-		'include/asm/ioctls.h',
-		subdir: 'asm'
-	)
-
-	install_headers(
-		'include/linux/fb.h',
-		'include/linux/kvm.h',
-		subdir: 'linux'
-	)
-
-	install_headers(
-		'include/mntent.h',
-		'include/pty.h',
-		'include/utmpx.h'
 	)
 endif
 
@@ -103,26 +63,8 @@ if not headers_only
 	crt = custom_target('crt0',
 		build_by_default: true,
 		command: c_compiler.cmd_array() + ['-c', '-o', '@OUTPUT@', '@INPUT@'],
-		input: 'crt-' + host_machine.cpu_family() / 'crt0.S',
+		input: 'crt-x86_64/crt0.S',
 		output: 'crt0.o',
-		install: true,
-		install_dir: get_option('libdir')
-	)
-
-	custom_target('crti',
-		build_by_default: true,
-		command: c_compiler.cmd_array() + ['-c', '-o', '@OUTPUT@', '@INPUT@'],
-		input: 'crt-' + host_machine.cpu_family() / 'crti.S',
-		output: 'crti.o',
-		install: true,
-		install_dir: get_option('libdir')
-	)
-
-	custom_target('crtn',
-		build_by_default: true,
-		command: c_compiler.cmd_array() + ['-c', '-o', '@OUTPUT@', '@INPUT@'],
-		input: 'crt-' + host_machine.cpu_family() / 'crtn.S',
-		output: 'crtn.o',
 		install: true,
 		install_dir: get_option('libdir')
 	)

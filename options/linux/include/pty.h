@@ -8,16 +8,12 @@
 extern "C" {
 #endif
 
-#ifndef __MLIBC_ABI_ONLY
-
-int openpty(int *__mfd, int *__sfd, char *__name, const struct termios *__ios, const struct winsize *__win);
-int forkpty(int *__mfd, char *__name, const struct termios *__ios, const struct winsize *__win);
-
-#endif /* !__MLIBC_ABI_ONLY */
+int openpty(int *, int *, char *, const struct termios *, const struct winsize *);
+int forkpty(int *, char *, const struct termios *, const struct winsize *);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _PTY_H */
+#endif // _PTY_H
 

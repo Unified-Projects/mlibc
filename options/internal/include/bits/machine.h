@@ -78,49 +78,9 @@ struct __mlibc_jmpbuf_register_state {
 	double fs10;
 	double fs11;
 };
-#elif defined (__m68k__)
-struct __mlibc_jmpbuf_register_state {
-	uint32_t d2;
-	uint32_t d3;
-	uint32_t d4;
-	uint32_t d5;
-	uint32_t d6;
-	uint32_t d7;
-	uint32_t a2;
-	uint32_t a3;
-	uint32_t a4;
-	uint32_t a5;
-	uint32_t a6;
-	uint32_t a7;
-	uint32_t sp;
-	uint32_t pc;
-};
-#elif defined (__loongarch64)
-struct __mlibc_jmpbuf_register_state {
-	uint64_t ra;
-	uint64_t sp;
-	uint64_t u0;
-	uint64_t s0;
-	uint64_t s1;
-	uint64_t s2;
-	uint64_t s3;
-	uint64_t s4;
-	uint64_t s5;
-	uint64_t s6;
-	uint64_t s7;
-	uint64_t s8;
-	double fs0;
-	double fs1;
-	double fs2;
-	double fs3;
-	double fs4;
-	double fs5;
-	double fs6;
-	double fs7;
-};
 #else
 #  error "Missing architecture specific code"
 #endif
 
-#endif /* MLIBC_MACHINE_H */
+#endif // MLIBC_MACHINE_H
 

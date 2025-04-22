@@ -1,1 +1,1 @@
-../../../../abis/dripos/seek-whence.h
+../../../../abis/mlibc/seek-whence.h

@@ -4,11 +4,8 @@
 #include <stdint.h>
 #include <abi-bits/signal.h>
 #include <abi-bits/epoll.h>
-#include <abi-bits/fcntl.h>
 
-#define EPOLL_NONBLOCK O_NONBLOCK
-
-/* These constants match the Linux definitions. */
+// These constants match the Linux definitions.
 #define EPOLLIN 0x001
 #define EPOLLPRI 0x002
 #define EPOLLOUT 0x004
@@ -43,24 +40,16 @@ typedef union epoll_data {
 struct epoll_event {
 	uint32_t events;
 	epoll_data_t data;
-}
-#ifdef __x86_64__
-__attribute__((__packed__))
-#endif
-;
+};
 
-#ifndef __MLIBC_ABI_ONLY
-
-int epoll_create(int __flags);
-int epoll_create1(int __flags);
-int epoll_ctl(int __epfd, int __mode, int __fd, struct epoll_event *__ev);
-int epoll_wait(int __epfd, struct epoll_event *__events, int __maxevents, int __timeout);
-int epoll_pwait(int __epfd, struct epoll_event *__events, int __maxevents, int __timeout, const sigset_t *__sigmask);
-
-#endif /* !__MLIBC_ABI_ONLY */
+int epoll_create(int);
+int epoll_create1(int);
+int epoll_ctl(int, int, int, struct epoll_event *);
+int epoll_wait(int, struct epoll_event *, int, int);
+int epoll_pwait(int, struct epoll_event *, int, int, const sigset_t *);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _SYS_EPOLL_H */
+#endif // _SYS_EPOLL_H

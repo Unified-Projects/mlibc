@@ -1,1 +1,1 @@
-../../../../abis/linux/uid_t.h
+../../../../abis/mlibc/uid_t.h

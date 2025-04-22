@@ -1,1 +1,1 @@
-../../../../abis/ironclad/utsname.h
+../../../../abis/mlibc/utsname.h

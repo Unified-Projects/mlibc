@@ -103,6 +103,4 @@ int main() {
 	test_attr();
 	test_broadcast_wakes_all();
 	test_timedwait_timedout();
-
-	return 0;
 }

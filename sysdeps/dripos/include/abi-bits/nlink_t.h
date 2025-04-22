@@ -1,1 +1,1 @@
-../../../../abis/dripos/nlink_t.h
+../../../../abis/mlibc/nlink_t.h

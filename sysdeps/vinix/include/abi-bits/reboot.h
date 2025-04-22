@@ -1,1 +1,1 @@
-../../../../abis/vinix/reboot.h
+../../../../abis/linux/reboot.h

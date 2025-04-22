@@ -1,55 +1,43 @@
-sysdep_supported_options = {
-	'posix': true,
-	'linux': true,
-	'glibc': true,
-	'bsd': true,
-}
-
-managarm = subproject('managarm', default_options: [ 'provide_deps=true' ])
-hel_dep = managarm.get_variable('hel_dep')
-proto_posix_dep = managarm.get_variable('posix_extra_dep')
 
 bragi = find_program('bragi')
-bragi_dep = subproject('bragi', default_options: ['install_headers=false']).get_variable('bragi_dep')
-
-libdrm_dep = subproject('libdrm-headers').get_variable('libdrm_dep')
 
 bragi_gen = generator(bragi, arguments: [
-		'@INPUT@',
-		'-o',
-		'@OUTPUT@',
-		'cpp', '-l', 'frigg',
+		'-l', 'frigg',
 		'--protobuf',
+		'@INPUT@',
+		'@OUTPUT@'
 	],
 	output: '@BASENAME@.frigg_bragi.hpp')
 
-fs_bragi = bragi_gen.process(managarm.get_variable('fs_bragi_files'))
-posix_bragi = bragi_gen.process(managarm.get_variable('posix_bragi_files'))
+fs_bragi = bragi_gen.process('../../subprojects/managarm/protocols/fs/fs.bragi')
+posix_bragi = bragi_gen.process('../../subprojects/managarm/protocols/posix/posix.bragi')
 
-rtld_sources += files(
+managarm_incl = include_directories(
+		'../../subprojects/managarm/protocols/posix/include',
+		'../../subprojects/managarm/hel/include',
+		'../../subprojects/bragi/include')
+
+rtdl_include_dirs += managarm_incl
+rtdl_sources += files(
 	'generic/ensure.cpp',
 	'generic/memory.cpp',
-	'rtld-generic/support.cpp',
+	'rtdl-generic/support.cpp',
 )
-rtld_sources += [
+rtdl_sources += [
 	fs_bragi,
 	posix_bragi,
 ]
 
-libc_deps += [ bragi_dep, hel_dep, proto_posix_dep, libdrm_dep ]
-rtld_deps += [ bragi_dep, hel_dep, proto_posix_dep ]
+libc_include_dirs += include_directories('../../../ports/libdrm/include')
+libc_include_dirs += managarm_incl
 
 libc_sources += files(
-	'generic/drm.cpp',
 	'generic/ensure.cpp',
 	'generic/entry.cpp',
 	'generic/file.cpp',
 	'generic/fork-exec.cpp',
-	'generic/ioctl.cpp',
 	'generic/memory.cpp',
 	'generic/mount.cpp',
-	'generic/net.cpp',
-	'generic/sched.cpp',
 	'generic/signals.cpp',
 	'generic/socket.cpp',
 	'generic/time.cpp'
@@ -71,10 +59,6 @@ elif host_machine.cpu_family() == 'x86_64'
 		'x86_64/thread_entry.S',
 		'x86_64/thread.cpp'
 	)
-elif host_machine.cpu_family() == 'riscv64'
-	libc_sources += files(
-		'riscv64/thread.cpp',
-	)
 else
 	error('Unknown architecture')
 endif
@@ -89,7 +73,6 @@ if not no_headers
 		'include/abi-bits/fcntl.h',
 		'include/abi-bits/in.h',
 		'include/abi-bits/stat.h',
-		'include/abi-bits/statx.h',
 		'include/abi-bits/signal.h',
 		'include/abi-bits/reboot.h',
 		'include/abi-bits/resource.h',
@@ -114,7 +97,6 @@ if not no_headers
 		'include/abi-bits/packet.h',
 		'include/abi-bits/inotify.h',
 		'include/abi-bits/clockid_t.h',
-		'include/abi-bits/ipc.h',
 		'include/abi-bits/shm.h',
 		'include/abi-bits/mqueue.h',
 		'include/abi-bits/suseconds_t.h',
@@ -123,41 +105,30 @@ if not no_headers
 		'include/abi-bits/socklen_t.h',
 		'include/abi-bits/statfs.h',
 		'include/abi-bits/statvfs.h',
-		'include/abi-bits/ioctls.h',
-		'include/abi-bits/xattr.h',
-		'include/abi-bits/msg.h',
-		'include/abi-bits/vt.h',
-		'include/abi-bits/random.h',
-		'include/abi-bits/rlim_t.h',
-		'include/abi-bits/sigval.h',
-		'include/abi-bits/sigevent.h',
-		subdir: 'abi-bits',
-		follow_symlinks: true
+		subdir: 'abi-bits'
 	)
 endif
 
 if not headers_only
-	crtstuff = ['crt0']
-	if host_machine.cpu_family() in ['x86_64', 'aarch64', 'riscv64']
-		crtstuff += [
-			'Scrt1',
-			'crti',
-			'crtn'
-		]
-	endif
-	foreach crtthing : crtstuff
-		crtf = crtthing + '.S'
-		crt_src = files(host_machine.cpu_family() / 'crt-src' / crtf)
-		crt = custom_target(
-			crtthing,
+	crt_src = files(host_machine.cpu_family() / 'crt-src/crt0.S')
+	crt = custom_target('crt0',
+		build_by_default: true,
+		command: c_compiler.cmd_array() + ['-c', '-o', '@OUTPUT@', '@INPUT@'],
+		input: crt_src,
+		output: 'crt0.o',
+		install: true,
+		install_dir: get_option('libdir')
+	)
+
+	if host_machine.cpu_family() == 'x86_64'
+		crt_pie = custom_target('Scrt1',
 			build_by_default: true,
-			command: c_compiler.cmd_array() + ['-c', '-o', '@OUTPUT@', '@INPUT@'],
-			input: crt_src,
-			output: crtthing + '.o',
+			command: c_compiler.cmd_array() + ['-fPIE', '-c', '-o', '@OUTPUT@', '@INPUT@'],
+			input: 'x86_64/crt-src/Scrt1.S',
+			output: 'Scrt1.o',
 			install: true,
 			install_dir: get_option('libdir')
 		)
-	endforeach
-
+	endif
 endif
 

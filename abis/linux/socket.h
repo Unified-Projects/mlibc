@@ -23,8 +23,7 @@ struct msghdr {
 
 struct sockaddr_storage {
 	sa_family_t ss_family;
-	char __padding[128 - sizeof(sa_family_t) - sizeof(long)];
-	long __force_alignment;
+	char __padding[128 - sizeof(sa_family_t)];
 };
 
 struct mmsghdr {
@@ -165,7 +164,6 @@ struct cmsghdr {
 #define AF_XDP          PF_XDP
 #define AF_MAX          PF_MAX
 
-#define SO_DEBUG        1
 #define SO_REUSEADDR    2
 #define SO_TYPE         3
 #define SO_ERROR        4
@@ -191,41 +189,12 @@ struct cmsghdr {
 #define SO_PROTOCOL     38
 #define SO_DOMAIN       39
 
-#ifndef SO_RCVTIMEO
-#if __LONG_MAX == 0x7fffffff
-#define SO_RCVTIMEO     66
-#else
 #define SO_RCVTIMEO     20
-#endif
-#endif
-
-#ifndef SO_RCVTIMEO_OLD
-#define SO_RCVTIMEO_OLD 20
-#endif
-
-#ifndef SO_SNDTIMEO
-#if __LONG_MAX == 0x7fffffff
-#define SO_SNDTIMEO     67
-#else
 #define SO_SNDTIMEO     21
-#endif
-#endif
 
-#ifndef SO_SNDTIMEO_OLD
-#define SO_SNDTIMEO_OLD 21
-#endif
-
-#ifndef SO_TIMESTAMP
-#if __LONG_MAX == 0x7fffffff
-#define SO_TIMESTAMP    63
-#define SO_TIMESTAMPNS  64
-#define SO_TIMESTAMPING 65
-#else
 #define SO_TIMESTAMP    29
 #define SO_TIMESTAMPNS  35
 #define SO_TIMESTAMPING 37
-#endif
-#endif
 
 #define SO_SECURITY_AUTHENTICATION              22
 #define SO_SECURITY_ENCRYPTION_TRANSPORT        23

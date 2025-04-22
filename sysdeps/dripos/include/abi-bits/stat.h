@@ -1,1 +1,1 @@
-../../../../abis/dripos/stat.h
+../../../../abis/mlibc/stat.h

@@ -1,35 +1,31 @@
 
 // for _Exit()
-#include <bits/errors.hpp>
 #include <stdlib.h>
 
-#include <errno.h>
 #include <string.h>
+#include <errno.h>
 
 // for fork() and execve()
 #include <unistd.h>
 // for sched_yield()
 #include <sched.h>
-#include <stdio.h>
 // for getrusage()
 #include <sys/resource.h>
 // for waitpid()
-#include <pthread.h>
 #include <sys/wait.h>
 
 #include <bits/ensure.h>
-#include <mlibc/all-sysdeps.hpp>
 #include <mlibc/allocator.hpp>
 #include <mlibc/debug.hpp>
 #include <mlibc/posix-pipe.hpp>
 #include <mlibc/thread-entry.hpp>
+#include <mlibc/all-sysdeps.hpp>
 #include <posix.frigg_bragi.hpp>
 
 namespace mlibc {
 
 int sys_futex_tid() {
-	HelWord tid = 0;
-	HEL_CHECK(helSyscall0_1(kHelCallSuper + posix::superGetTid, &tid));
+	SignalGuard sguard;
 
 	managarm::posix::GetTidRequest<MemoryAllocator> req(getSysdepsAllocator());
 
@@ -54,100 +50,69 @@ int sys_futex_tid() {
 
 int sys_futex_wait(int *pointer, int expected, const struct timespec *time) {
 	// This implementation is inherently signal-safe.
-	if (time) {
-		if (helFutexWait(pointer, expected, time->tv_nsec + time->tv_sec * 1000000000))
+	if(time) {
+		if(helFutexWait(pointer, expected, time->tv_nsec + time->tv_sec * 1000000000))
 			return -1;
 		return 0;
 	}
-	if (helFutexWait(pointer, expected, -1))
+	if(helFutexWait(pointer, expected, -1))
 		return -1;
 	return 0;
 }
 
 int sys_futex_wake(int *pointer) {
 	// This implementation is inherently signal-safe.
-	if (helFutexWake(pointer))
+	if(helFutexWake(pointer))
 		return -1;
 	return 0;
 }
 
 int sys_waitpid(pid_t pid, int *status, int flags, struct rusage *ru, pid_t *ret_pid) {
+	if(ru) {
+		mlibc::infoLogger() << "mlibc: struct rusage in sys_waitpid is unsupported" << frg::endlog;
+		return ENOSYS;
+	}
+
 	SignalGuard sguard;
+	HelAction actions[3];
+	globalQueue.trim();
 
 	managarm::posix::CntRequest<MemoryAllocator> req(getSysdepsAllocator());
 	req.set_request_type(managarm::posix::CntReqType::WAIT);
 	req.set_pid(pid);
 	req.set_flags(flags);
 
-	auto [offer, send_head, recv_resp] = exchangeMsgsSync(
-	    getPosixLane(),
-	    helix_ng::offer(
-	        helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()), helix_ng::recvInline()
-	    )
-	);
+	frg::string<MemoryAllocator> ser(getSysdepsAllocator());
+	req.SerializeToString(&ser);
+	actions[0].type = kHelActionOffer;
+	actions[0].flags = kHelItemAncillary;
+	actions[1].type = kHelActionSendFromBuffer;
+	actions[1].flags = kHelItemChain;
+	actions[1].buffer = ser.data();
+	actions[1].length = ser.size();
+	actions[2].type = kHelActionRecvInline;
+	actions[2].flags = 0;
+	HEL_CHECK(helSubmitAsync(getPosixLane(), actions, 3,
+			globalQueue.getQueue(), 0, 0));
 
-	HEL_CHECK(offer.error());
-	HEL_CHECK(send_head.error());
-	HEL_CHECK(recv_resp.error());
+	auto element = globalQueue.dequeueSingle();
+	auto offer = parseHandle(element);
+	auto send_req = parseSimple(element);
+	auto recv_resp = parseInline(element);
+
+	HEL_CHECK(offer->error);
+	HEL_CHECK(send_req->error);
+	HEL_CHECK(recv_resp->error);
 
 	managarm::posix::SvrResponse<MemoryAllocator> resp(getSysdepsAllocator());
-	resp.ParseFromArray(recv_resp.data(), recv_resp.length());
-	if (resp.error() != managarm::posix::Errors::SUCCESS)
-		return resp.error() | toErrno;
-
-	if (status)
+	resp.ParseFromArray(recv_resp->data, recv_resp->length);
+	if(resp.error() == managarm::posix::Errors::ILLEGAL_ARGUMENTS) {
+		return EINVAL;
+	}
+	__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
+	if(status)
 		*status = resp.mode();
 	*ret_pid = resp.pid();
-
-	if (ru != nullptr) {
-		ru->ru_utime.tv_sec = resp.ru_user_time() / 1'000'000'000;
-		ru->ru_utime.tv_usec = (resp.ru_user_time() % 1'000'000'000) / 1'000;
-	}
-
-	return 0;
-}
-
-int sys_waitid(idtype_t idtype, id_t id, siginfo_t *info, int options) {
-	SignalGuard sguard;
-
-	managarm::posix::WaitIdRequest<MemoryAllocator> req(getSysdepsAllocator());
-
-	req.set_idtype(idtype);
-	req.set_id(id);
-	req.set_flags(options);
-
-	auto [offer, send_head, recv_resp] = exchangeMsgsSync(
-	    getPosixLane(),
-	    helix_ng::offer(
-	        helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()), helix_ng::recvInline()
-	    )
-	);
-
-	HEL_CHECK(offer.error());
-	HEL_CHECK(send_head.error());
-	HEL_CHECK(recv_resp.error());
-
-	managarm::posix::WaitIdResponse<MemoryAllocator> resp(getSysdepsAllocator());
-	resp.ParseFromArray(recv_resp.data(), recv_resp.length());
-	if (resp.error() != managarm::posix::Errors::SUCCESS)
-		return resp.error() | toErrno;
-
-	info->si_pid = resp.pid();
-	info->si_uid = resp.uid();
-	info->si_code = resp.sig_code();
-	switch (info->si_code) {
-		case CLD_EXITED:
-			info->si_status = WEXITSTATUS(resp.sig_status());
-			break;
-		case CLD_KILLED:
-		case CLD_DUMPED:
-		case CLD_STOPPED:
-			info->si_signo = WSTOPSIG(resp.sig_status());
-			break;
-		case CLD_CONTINUED:
-			info->si_signo = SIGCHLD;
-			break;
-	}
 	return 0;
 }
 
@@ -170,9 +135,8 @@ int sys_sleep(time_t *secs, long *nanos) {
 	HEL_CHECK(helGetClock(&now));
 
 	uint64_t async_id;
-	HEL_CHECK(helSubmitAwaitClock(
-	    now + uint64_t(*secs) * 1000000000 + uint64_t(*nanos), globalQueue.getQueue(), 0, &async_id
-	));
+	HEL_CHECK(helSubmitAwaitClock(now + uint64_t(*secs) * 1000000000 + uint64_t(*nanos),
+			globalQueue.getQueue(), 0, &async_id));
 
 	auto element = globalQueue.dequeueSingle();
 	auto result = parseSimple(element);
@@ -200,7 +164,7 @@ int sys_fork(pid_t *child) {
 	HEL_CHECK(helSyscall0_1(kHelCallSuper + 2, &out));
 	*child = out;
 
-	if (!out) {
+	if(!out) {
 		clearCachedInfos();
 		globalQueue.recreateQueue();
 	}
@@ -214,25 +178,23 @@ int sys_fork(pid_t *child) {
 int sys_execve(const char *path, char *const argv[], char *const envp[]) {
 	// TODO: Make this function signal-safe!
 	frg::string<MemoryAllocator> args_area(getSysdepsAllocator());
-	for (auto it = argv; *it; ++it)
+	for(auto it = argv; *it; ++it)
 		args_area += frg::string_view{*it, strlen(*it) + 1};
 
 	frg::string<MemoryAllocator> env_area(getSysdepsAllocator());
-	for (auto it = envp; *it; ++it)
+	for(auto it = envp; *it; ++it)
 		env_area += frg::string_view{*it, strlen(*it) + 1};
 
 	uintptr_t out;
 
-	HEL_CHECK(helSyscall6_1(
-	    kHelCallSuper + posix::superExecve,
-	    reinterpret_cast<uintptr_t>(path),
-	    strlen(path),
-	    reinterpret_cast<uintptr_t>(args_area.data()),
-	    args_area.size(),
-	    reinterpret_cast<uintptr_t>(env_area.data()),
-	    env_area.size(),
-	    &out
-	));
+	HEL_CHECK(helSyscall6_1(kHelCallSuper + 3,
+			reinterpret_cast<uintptr_t>(path),
+			strlen(path),
+			reinterpret_cast<uintptr_t>(args_area.data()),
+			args_area.size(),
+			reinterpret_cast<uintptr_t>(env_area.data()),
+			env_area.size(),
+			&out));
 
 	return out;
 }
@@ -242,12 +204,14 @@ gid_t sys_getgid() {
 
 	managarm::posix::GetGidRequest<MemoryAllocator> req(getSysdepsAllocator());
 
-	auto [offer, send_head, recv_resp] = exchangeMsgsSync(
-	    getPosixLane(),
-	    helix_ng::offer(
-	        helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()), helix_ng::recvInline()
-	    )
-	);
+	auto [offer, send_head, recv_resp] =
+		exchangeMsgsSync(
+			getPosixLane(),
+			helix_ng::offer(
+				helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+				helix_ng::recvInline()
+			)
+		);
 
 	HEL_CHECK(offer.error());
 	HEL_CHECK(send_head.error());
@@ -266,12 +230,14 @@ int sys_setgid(gid_t gid) {
 
 	req.set_uid(gid);
 
-	auto [offer, send_head, recv_resp] = exchangeMsgsSync(
-	    getPosixLane(),
-	    helix_ng::offer(
-	        helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()), helix_ng::recvInline()
-	    )
-	);
+	auto [offer, send_head, recv_resp] =
+		exchangeMsgsSync(
+			getPosixLane(),
+			helix_ng::offer(
+				helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+				helix_ng::recvInline()
+			)
+		);
 
 	HEL_CHECK(offer.error());
 	HEL_CHECK(send_head.error());
@@ -279,10 +245,14 @@ int sys_setgid(gid_t gid) {
 
 	managarm::posix::SvrResponse<MemoryAllocator> resp(getSysdepsAllocator());
 	resp.ParseFromArray(recv_resp.data(), recv_resp.length());
-	if (resp.error() != managarm::posix::Errors::SUCCESS)
-		return resp.error() | toErrno;
-
-	return 0;
+	if(resp.error() == managarm::posix::Errors::ACCESS_DENIED) {
+		return EPERM;
+	}else if(resp.error() == managarm::posix::Errors::ILLEGAL_ARGUMENTS) {
+		return EINVAL;
+	}else{
+		__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
+		return 0;
+	}
 }
 
 gid_t sys_getegid() {
@@ -290,12 +260,14 @@ gid_t sys_getegid() {
 
 	managarm::posix::GetEgidRequest<MemoryAllocator> req(getSysdepsAllocator());
 
-	auto [offer, send_head, recv_resp] = exchangeMsgsSync(
-	    getPosixLane(),
-	    helix_ng::offer(
-	        helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()), helix_ng::recvInline()
-	    )
-	);
+	auto [offer, send_head, recv_resp] =
+		exchangeMsgsSync(
+			getPosixLane(),
+			helix_ng::offer(
+				helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+				helix_ng::recvInline()
+			)
+		);
 
 	HEL_CHECK(offer.error());
 	HEL_CHECK(send_head.error());
@@ -314,12 +286,14 @@ int sys_setegid(gid_t egid) {
 
 	req.set_uid(egid);
 
-	auto [offer, send_head, recv_resp] = exchangeMsgsSync(
-	    getPosixLane(),
-	    helix_ng::offer(
-	        helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()), helix_ng::recvInline()
-	    )
-	);
+	auto [offer, send_head, recv_resp] =
+		exchangeMsgsSync(
+			getPosixLane(),
+			helix_ng::offer(
+				helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+				helix_ng::recvInline()
+			)
+		);
 
 	HEL_CHECK(offer.error());
 	HEL_CHECK(send_head.error());
@@ -327,10 +301,14 @@ int sys_setegid(gid_t egid) {
 
 	managarm::posix::SvrResponse<MemoryAllocator> resp(getSysdepsAllocator());
 	resp.ParseFromArray(recv_resp.data(), recv_resp.length());
-	if (resp.error() != managarm::posix::Errors::SUCCESS)
-		return resp.error() | toErrno;
-
-	return 0;
+	if(resp.error() == managarm::posix::Errors::ACCESS_DENIED) {
+		return EPERM;
+	}else if(resp.error() == managarm::posix::Errors::ILLEGAL_ARGUMENTS) {
+		return EINVAL;
+	}else{
+		__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
+		return 0;
+	}
 }
 
 uid_t sys_getuid() {
@@ -338,12 +316,14 @@ uid_t sys_getuid() {
 
 	managarm::posix::GetUidRequest<MemoryAllocator> req(getSysdepsAllocator());
 
-	auto [offer, send_head, recv_resp] = exchangeMsgsSync(
-	    getPosixLane(),
-	    helix_ng::offer(
-	        helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()), helix_ng::recvInline()
-	    )
-	);
+	auto [offer, send_head, recv_resp] =
+		exchangeMsgsSync(
+			getPosixLane(),
+			helix_ng::offer(
+				helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+				helix_ng::recvInline()
+			)
+		);
 
 	HEL_CHECK(offer.error());
 	HEL_CHECK(send_head.error());
@@ -362,12 +342,14 @@ int sys_setuid(uid_t uid) {
 
 	req.set_uid(uid);
 
-	auto [offer, send_head, recv_resp] = exchangeMsgsSync(
-	    getPosixLane(),
-	    helix_ng::offer(
-	        helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()), helix_ng::recvInline()
-	    )
-	);
+	auto [offer, send_head, recv_resp] =
+		exchangeMsgsSync(
+			getPosixLane(),
+			helix_ng::offer(
+				helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+				helix_ng::recvInline()
+			)
+		);
 
 	HEL_CHECK(offer.error());
 	HEL_CHECK(send_head.error());
@@ -375,10 +357,14 @@ int sys_setuid(uid_t uid) {
 
 	managarm::posix::SvrResponse<MemoryAllocator> resp(getSysdepsAllocator());
 	resp.ParseFromArray(recv_resp.data(), recv_resp.length());
-	if (resp.error() != managarm::posix::Errors::SUCCESS)
-		return resp.error() | toErrno;
-
-	return 0;
+	if(resp.error() == managarm::posix::Errors::ACCESS_DENIED) {
+		return EPERM;
+	}else if(resp.error() == managarm::posix::Errors::ILLEGAL_ARGUMENTS) {
+		return EINVAL;
+	}else{
+		__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
+		return 0;
+	}
 }
 
 uid_t sys_geteuid() {
@@ -386,12 +372,14 @@ uid_t sys_geteuid() {
 
 	managarm::posix::GetEuidRequest<MemoryAllocator> req(getSysdepsAllocator());
 
-	auto [offer, send_head, recv_resp] = exchangeMsgsSync(
-	    getPosixLane(),
-	    helix_ng::offer(
-	        helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()), helix_ng::recvInline()
-	    )
-	);
+	auto [offer, send_head, recv_resp] =
+		exchangeMsgsSync(
+			getPosixLane(),
+			helix_ng::offer(
+				helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+				helix_ng::recvInline()
+			)
+		);
 
 	HEL_CHECK(offer.error());
 	HEL_CHECK(send_head.error());
@@ -410,12 +398,14 @@ int sys_seteuid(uid_t euid) {
 
 	req.set_uid(euid);
 
-	auto [offer, send_head, recv_resp] = exchangeMsgsSync(
-	    getPosixLane(),
-	    helix_ng::offer(
-	        helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()), helix_ng::recvInline()
-	    )
-	);
+	auto [offer, send_head, recv_resp] =
+		exchangeMsgsSync(
+			getPosixLane(),
+			helix_ng::offer(
+				helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+				helix_ng::recvInline()
+			)
+		);
 
 	HEL_CHECK(offer.error());
 	HEL_CHECK(send_head.error());
@@ -423,10 +413,14 @@ int sys_seteuid(uid_t euid) {
 
 	managarm::posix::SvrResponse<MemoryAllocator> resp(getSysdepsAllocator());
 	resp.ParseFromArray(recv_resp.data(), recv_resp.length());
-	if (resp.error() != managarm::posix::Errors::SUCCESS)
-		return resp.error() | toErrno;
-
-	return 0;
+	if(resp.error() == managarm::posix::Errors::ACCESS_DENIED) {
+		return EPERM;
+	}else if(resp.error() == managarm::posix::Errors::ILLEGAL_ARGUMENTS) {
+		return EINVAL;
+	}else{
+		__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
+		return 0;
+	}
 }
 
 pid_t sys_gettid() {
@@ -436,23 +430,36 @@ pid_t sys_gettid() {
 
 pid_t sys_getpid() {
 	SignalGuard sguard;
+	HelAction actions[3];
+	globalQueue.trim();
 
 	managarm::posix::CntRequest<MemoryAllocator> req(getSysdepsAllocator());
 	req.set_request_type(managarm::posix::CntReqType::GET_PID);
 
-	auto [offer, send_head, recv_resp] = exchangeMsgsSync(
-	    getPosixLane(),
-	    helix_ng::offer(
-	        helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()), helix_ng::recvInline()
-	    )
-	);
+	frg::string<MemoryAllocator> ser(getSysdepsAllocator());
+	req.SerializeToString(&ser);
+	actions[0].type = kHelActionOffer;
+	actions[0].flags = kHelItemAncillary;
+	actions[1].type = kHelActionSendFromBuffer;
+	actions[1].flags = kHelItemChain;
+	actions[1].buffer = ser.data();
+	actions[1].length = ser.size();
+	actions[2].type = kHelActionRecvInline;
+	actions[2].flags = 0;
+	HEL_CHECK(helSubmitAsync(getPosixLane(), actions, 3,
+			globalQueue.getQueue(), 0, 0));
 
-	HEL_CHECK(offer.error());
-	HEL_CHECK(send_head.error());
-	HEL_CHECK(recv_resp.error());
+	auto element = globalQueue.dequeueSingle();
+	auto offer = parseHandle(element);
+	auto send_req = parseSimple(element);
+	auto recv_resp = parseInline(element);
+
+	HEL_CHECK(offer->error);
+	HEL_CHECK(send_req->error);
+	HEL_CHECK(recv_resp->error);
 
 	managarm::posix::SvrResponse<MemoryAllocator> resp(getSysdepsAllocator());
-	resp.ParseFromArray(recv_resp.data(), recv_resp.length());
+	resp.ParseFromArray(recv_resp->data, recv_resp->length);
 	__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
 	return resp.pid();
 }
@@ -462,12 +469,14 @@ pid_t sys_getppid() {
 
 	managarm::posix::GetPpidRequest<MemoryAllocator> req(getSysdepsAllocator());
 
-	auto [offer, send_head, recv_resp] = exchangeMsgsSync(
-	    getPosixLane(),
-	    helix_ng::offer(
-	        helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()), helix_ng::recvInline()
-	    )
-	);
+	auto [offer, send_head, recv_resp] =
+		exchangeMsgsSync(
+			getPosixLane(),
+			helix_ng::offer(
+				helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+				helix_ng::recvInline()
+			)
+		);
 
 	HEL_CHECK(offer.error());
 	HEL_CHECK(send_head.error());
@@ -479,18 +488,20 @@ pid_t sys_getppid() {
 	return resp.pid();
 }
 
-int sys_getsid(pid_t pid, pid_t *sid) {
+pid_t sys_getsid(pid_t pid, pid_t *sid) {
 	SignalGuard sguard;
 
 	managarm::posix::GetSidRequest<MemoryAllocator> req(getSysdepsAllocator());
 	req.set_pid(pid);
 
-	auto [offer, send_head, recv_resp] = exchangeMsgsSync(
-	    getPosixLane(),
-	    helix_ng::offer(
-	        helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()), helix_ng::recvInline()
-	    )
-	);
+	auto [offer, send_head, recv_resp] =
+		exchangeMsgsSync(
+			getPosixLane(),
+			helix_ng::offer(
+				helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+				helix_ng::recvInline()
+			)
+		);
 
 	HEL_CHECK(offer.error());
 	HEL_CHECK(send_head.error());
@@ -498,29 +509,30 @@ int sys_getsid(pid_t pid, pid_t *sid) {
 
 	managarm::posix::SvrResponse<MemoryAllocator> resp(getSysdepsAllocator());
 	resp.ParseFromArray(recv_resp.data(), recv_resp.length());
-	if (resp.error() == managarm::posix::Errors::NO_SUCH_RESOURCE) {
+	if(resp.error() == managarm::posix::Errors::NO_SUCH_RESOURCE) {
 		*sid = 0;
 		return ESRCH;
-	} else if (resp.error() != managarm::posix::Errors::SUCCESS) {
-		return resp.error() | toErrno;
+	} else {
+		__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
+		*sid = resp.pid();
+		return 0;
 	}
-
-	*sid = resp.pid();
-	return 0;
 }
 
-int sys_getpgid(pid_t pid, pid_t *pgid) {
+pid_t sys_getpgid(pid_t pid, pid_t *pgid) {
 	SignalGuard sguard;
 
 	managarm::posix::GetPgidRequest<MemoryAllocator> req(getSysdepsAllocator());
 	req.set_pid(pid);
 
-	auto [offer, send_head, recv_resp] = exchangeMsgsSync(
-	    getPosixLane(),
-	    helix_ng::offer(
-	        helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()), helix_ng::recvInline()
-	    )
-	);
+	auto [offer, send_head, recv_resp] =
+		exchangeMsgsSync(
+			getPosixLane(),
+			helix_ng::offer(
+				helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+				helix_ng::recvInline()
+			)
+		);
 
 	HEL_CHECK(offer.error());
 	HEL_CHECK(send_head.error());
@@ -528,15 +540,14 @@ int sys_getpgid(pid_t pid, pid_t *pgid) {
 
 	managarm::posix::SvrResponse<MemoryAllocator> resp(getSysdepsAllocator());
 	resp.ParseFromArray(recv_resp.data(), recv_resp.length());
-	if (resp.error() == managarm::posix::Errors::NO_SUCH_RESOURCE) {
+	if(resp.error() == managarm::posix::Errors::NO_SUCH_RESOURCE) {
 		*pgid = 0;
 		return ESRCH;
-	} else if (resp.error() != managarm::posix::Errors::SUCCESS) {
-		return resp.error() | toErrno;
+	} else {
+		__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
+		*pgid = resp.pid();
+		return 0;
 	}
-
-	*pgid = resp.pid();
-	return 0;
 }
 
 int sys_setpgid(pid_t pid, pid_t pgid) {
@@ -547,12 +558,14 @@ int sys_setpgid(pid_t pid, pid_t pgid) {
 	req.set_pid(pid);
 	req.set_pgid(pgid);
 
-	auto [offer, send_head, recv_resp] = exchangeMsgsSync(
-	    getPosixLane(),
-	    helix_ng::offer(
-	        helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()), helix_ng::recvInline()
-	    )
-	);
+	auto [offer, send_head, recv_resp] =
+		exchangeMsgsSync(
+			getPosixLane(),
+			helix_ng::offer(
+				helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()),
+				helix_ng::recvInline()
+			)
+		);
 
 	HEL_CHECK(offer.error());
 	HEL_CHECK(send_head.error());
@@ -560,36 +573,54 @@ int sys_setpgid(pid_t pid, pid_t pgid) {
 
 	managarm::posix::SvrResponse<MemoryAllocator> resp(getSysdepsAllocator());
 	resp.ParseFromArray(recv_resp.data(), recv_resp.length());
-	if (resp.error() != managarm::posix::Errors::SUCCESS)
-		return resp.error() | toErrno;
-
-	return 0;
+	if(resp.error() == managarm::posix::Errors::INSUFFICIENT_PERMISSION) {
+		return EPERM;
+	}else if(resp.error() == managarm::posix::Errors::NO_SUCH_RESOURCE) {
+		return ESRCH;
+	}else if(resp.error() == managarm::posix::Errors::ACCESS_DENIED) {
+		return EACCES;
+	}else{
+		__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
+		return 0;
+	}
 }
 
 int sys_getrusage(int scope, struct rusage *usage) {
 	memset(usage, 0, sizeof(struct rusage));
 
 	SignalGuard sguard;
+	HelAction actions[3];
+	globalQueue.trim();
 
 	managarm::posix::CntRequest<MemoryAllocator> req(getSysdepsAllocator());
 	req.set_request_type(managarm::posix::CntReqType::GET_RESOURCE_USAGE);
 	req.set_mode(scope);
 
-	auto [offer, send_head, recv_resp] = exchangeMsgsSync(
-	    getPosixLane(),
-	    helix_ng::offer(
-	        helix_ng::sendBragiHeadOnly(req, getSysdepsAllocator()), helix_ng::recvInline()
-	    )
-	);
+	frg::string<MemoryAllocator> ser(getSysdepsAllocator());
+	req.SerializeToString(&ser);
+	actions[0].type = kHelActionOffer;
+	actions[0].flags = kHelItemAncillary;
+	actions[1].type = kHelActionSendFromBuffer;
+	actions[1].flags = kHelItemChain;
+	actions[1].buffer = ser.data();
+	actions[1].length = ser.size();
+	actions[2].type = kHelActionRecvInline;
+	actions[2].flags = 0;
+	HEL_CHECK(helSubmitAsync(getPosixLane(), actions, 3,
+			globalQueue.getQueue(), 0, 0));
 
-	HEL_CHECK(offer.error());
-	HEL_CHECK(send_head.error());
-	HEL_CHECK(recv_resp.error());
+	auto element = globalQueue.dequeueSingle();
+	auto offer = parseHandle(element);
+	auto send_req = parseSimple(element);
+	auto recv_resp = parseInline(element);
+
+	HEL_CHECK(offer->error);
+	HEL_CHECK(send_req->error);
+	HEL_CHECK(recv_resp->error);
 
 	managarm::posix::SvrResponse<MemoryAllocator> resp(getSysdepsAllocator());
-	resp.ParseFromArray(recv_resp.data(), recv_resp.length());
-	if (resp.error() != managarm::posix::Errors::SUCCESS)
-		return resp.error() | toErrno;
+	resp.ParseFromArray(recv_resp->data, recv_resp->length);
+	__ensure(resp.error() == managarm::posix::Errors::SUCCESS);
 
 	usage->ru_utime.tv_sec = resp.ru_user_time() / 1'000'000'000;
 	usage->ru_utime.tv_usec = (resp.ru_user_time() % 1'000'000'000) / 1'000;
@@ -597,45 +628,12 @@ int sys_getrusage(int scope, struct rusage *usage) {
 	return 0;
 }
 
-int sys_getschedparam(void *tcb, int *policy, struct sched_param *param) {
-	if (tcb != mlibc::get_current_tcb()) {
-		return ESRCH;
-	}
-
-	*policy = SCHED_OTHER;
-	int prio = 0;
-	// TODO(no92): use helGetPriority(kHelThisThread) here
-	mlibc::infoLogger() << "\e[31mlibc: sys_getschedparam always returns priority 0\e[39m"
-	                    << frg::endlog;
-	param->sched_priority = prio;
-
-	return 0;
-}
-
-int sys_setschedparam(void *tcb, int policy, const struct sched_param *param) {
-	if (tcb != mlibc::get_current_tcb()) {
-		return ESRCH;
-	}
-
-	if (policy != SCHED_OTHER) {
-		return EINVAL;
-	}
-
-	HEL_CHECK(helSetPriority(kHelThisThread, param->sched_priority));
-
-	return 0;
-}
-
 int sys_clone(void *tcb, pid_t *pid_out, void *stack) {
-	(void)tcb;
-
 	HelWord pid = 0;
-	HEL_CHECK(helSyscall2_1(
-	    kHelCallSuper + posix::superClone,
-	    reinterpret_cast<HelWord>(__mlibc_start_thread),
-	    reinterpret_cast<HelWord>(stack),
-	    &pid
-	));
+	HEL_CHECK(helSyscall2_1(kHelCallSuper + 9,
+				reinterpret_cast<HelWord>(__mlibc_start_thread),
+				reinterpret_cast<HelWord>(stack),
+				&pid));
 
 	if (pid_out)
 		*pid_out = pid;
@@ -647,7 +645,7 @@ int sys_tcb_set(void *pointer) {
 #if defined(__aarch64__)
 	uintptr_t addr = reinterpret_cast<uintptr_t>(pointer);
 	addr += sizeof(Tcb) - 0x10;
-	asm volatile("msr tpidr_el0, %0" ::"r"(addr));
+	asm volatile ("msr tpidr_el0, %0" :: "r"(addr));
 #else
 	HEL_CHECK(helWriteFsBase(pointer));
 #endif
@@ -660,68 +658,6 @@ void sys_thread_exit() {
 	__builtin_trap();
 }
 
-int sys_thread_setname(void *tcb, const char *name) {
-	if (strlen(name) > 15) {
-		return ERANGE;
-	}
 
-	auto t = reinterpret_cast<Tcb *>(tcb);
-	char *path;
-	int cs = 0;
+} //namespace mlibc
 
-	if (asprintf(&path, "/proc/self/task/%d/comm", t->tid) < 0) {
-		return ENOMEM;
-	}
-
-	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cs);
-
-	int fd;
-	if (int e = sys_open(path, O_WRONLY, 0, &fd); e) {
-		return e;
-	}
-
-	if (int e = sys_write(fd, name, strlen(name) + 1, NULL)) {
-		return e;
-	}
-
-	sys_close(fd);
-
-	pthread_setcancelstate(cs, 0);
-
-	return 0;
-}
-
-int sys_thread_getname(void *tcb, char *name, size_t size) {
-	auto t = reinterpret_cast<Tcb *>(tcb);
-	char *path;
-	int cs = 0;
-	ssize_t real_size = 0;
-
-	if (asprintf(&path, "/proc/self/task/%d/comm", t->tid) < 0) {
-		return ENOMEM;
-	}
-
-	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cs);
-
-	int fd;
-	if (int e = sys_open(path, O_RDONLY | O_CLOEXEC, 0, &fd); e) {
-		return e;
-	}
-
-	if (int e = sys_read(fd, name, size, &real_size)) {
-		return e;
-	}
-
-	name[real_size - 1] = 0;
-	sys_close(fd);
-
-	pthread_setcancelstate(cs, 0);
-
-	if (static_cast<ssize_t>(size) <= real_size) {
-		return ERANGE;
-	}
-
-	return 0;
-}
-
-} // namespace mlibc

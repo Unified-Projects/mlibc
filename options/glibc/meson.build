@@ -1,27 +1,17 @@
-if not glibc_option
+if disable_glibc_option
 	subdir_done()
 endif
 libc_sources += files(
-	'generic/getopt.cpp',
-	'generic/stdio_ext.cpp',
+	'generic/getopt-stubs.cpp',
+	'generic/stdio_ext-stubs.cpp',
 	'generic/sys-ioctl.cpp',
 	'generic/err.cpp',
-	'generic/error.cpp',
-	'generic/resolv.cpp',
-	'generic/shadow.cpp',
+	'generic/resolv-stubs.cpp',
+	'generic/shadow-stubs.cpp',
 	'generic/printf.cpp',
 	'generic/glibc-signal.cpp',
 	'generic/execinfo.cpp',
 	'generic/string.cpp',
-	'generic/personality.cpp',
-	'generic/gshadow.cpp',
-	'generic/sys-timex.cpp',
-	'generic/glibc-assert.cpp',
-	'generic/malloc.cpp',
-	'generic/sys-cachectl.cpp',
-	'generic/sys-io.cpp',
-	'generic/search.cpp',
-	'generic/stdlib.cpp'
 )
 
 if not no_headers
@@ -29,7 +19,6 @@ if not no_headers
 		'include/getopt.h',
 		'include/stdio_ext.h',
 		'include/err.h',
-		'include/error.h',
 		'include/paths.h',
 		'include/sysexits.h',
 		'include/resolv.h',
@@ -43,7 +32,6 @@ if not no_headers
 		'include/features.h'
 	)
 	install_headers(
-		'include/sys/cachectl.h',
 		'include/sys/dir.h',
 		'include/sys/ioctl.h',
 		'include/sys/user.h',
@@ -55,10 +43,6 @@ if not no_headers
 		'include/sys/personality.h',
 		'include/sys/timeb.h',
 		'include/sys/mtio.h',
-		'include/sys/endian.h',
-		'include/sys/timex.h',
-		'include/sys/kd.h',
-		'include/sys/io.h',
 		subdir: 'sys'
 	)
 	install_headers(
@@ -85,11 +69,6 @@ if not no_headers
 	)
 	install_headers(
 		'include/bits/glibc/glibc_signal.h',
-		'include/bits/glibc/glibc_assert.h',
-		'include/bits/glibc/glibc_malloc.h',
-		'include/bits/glibc/glibc_icmp6.h',
-		'include/bits/glibc/glibc_search.h',
-		'include/bits/glibc/glibc_stdlib.h',
 		subdir: 'bits/glibc'
 	)
 endif

@@ -1,1 +1,1 @@
-../../../../abis/linux/access.h
+../../../../abis/mlibc/access.h

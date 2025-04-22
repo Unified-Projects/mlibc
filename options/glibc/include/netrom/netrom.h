@@ -15,8 +15,8 @@ struct nr_parms_struct {
 	unsigned int paclen;
 };
 
-#if __MLIBC_LINUX_OPTION
-#include <abi-bits/ioctls.h>
+#if defined(__linux__) || defined(__MLIBC_LINUX_OPTION)
+#include <linux/sockios.h>
 
 #define SIOCNRGETPARMS (SIOCPROTOPRIVATE)
 #define SIOCNRSETPARMS (SIOCPROTOPRIVATE + 1)

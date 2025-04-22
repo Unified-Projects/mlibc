@@ -34,6 +34,4 @@ int main() {
 	assert(errno == EINVAL);
 	assert(p == NULL);
 #endif
-
-	return 0;
 }

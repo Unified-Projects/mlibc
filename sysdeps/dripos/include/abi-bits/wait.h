@@ -1,1 +1,1 @@
-../../../../abis/dripos/wait.h
+../../../../abis/mlibc/wait.h

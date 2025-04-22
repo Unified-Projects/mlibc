@@ -1,1 +1,1 @@
-../../../../abis/dripos/inotify.h
+../../../../abis/mlibc/inotify.h

@@ -5,20 +5,10 @@
 extern "C" {
 #endif
 
-#ifndef __MLIBC_ABI_ONLY
-
-int tgkill(int __tgid, int __tid, int __sig);
-
-#if defined(_GNU_SOURCE)
-
-typedef void (*sighandler_t)(int __signo);
-
-#endif
-
-#endif /* !__MLIBC_ABI_ONLY */
+int tgkill(int, int, int);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* MLIBC_GLIBC_SIGNAL_H */
+#endif // MLIBC_GLIBC_SIGNAL_H

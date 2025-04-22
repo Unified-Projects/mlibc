@@ -1,1 +1,1 @@
-../../../../abis/dripos/signal.h
+../../../../abis/mlibc/signal.h

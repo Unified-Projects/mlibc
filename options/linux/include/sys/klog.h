@@ -5,11 +5,7 @@
 extern "C" {
 #endif
 
-#ifndef __MLIBC_ABI_ONLY
-
-int klogctl(int __type, char *__bufp, int __len);
-
-#endif /* !__MLIBC_ABI_ONLY */
+int klogctl(int type, char *bufp, int len);
 
 #ifdef __cplusplus
 }

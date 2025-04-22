@@ -15,6 +15,4 @@ int main() {
 
 	res = system(NULL);
 	assert(res == 1);
-
-	return 0;
 }

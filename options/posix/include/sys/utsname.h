@@ -8,15 +8,11 @@
 extern "C" {
 #endif
 
-#ifndef __MLIBC_ABI_ONLY
-
-int uname(struct utsname *__name);
-
-#endif /* !__MLIBC_ABI_ONLY */
+int uname(struct utsname *);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _SYS_UTSNAME_H */
+#endif // _SYS_UTSNAME_H
 

@@ -22,12 +22,10 @@ LOGGER = logging.getLogger(__name__)
 
 # ADD NEW ARCHITECTURES HERE: these should match directory names in Linuxes arch/
 # directory or the second element of one of the harnesses below
-WANTED_ARCHES = ["riscv64", "x86_64", "arm64", "i386", "m68k", "loongarch64"]
+WANTED_ARCHES = ["riscv64", "x86_64", "arm64"]
 # How to translate from Linux arch directory names to gnutools architecture fields
 LINUX_GNU_TRANSLATION = {
-    "arm64": "aarch64",
-    "i386": "x86",
-    "loongarch": "loongarch64",
+    "arm64": "aarch64"
 }
 
 argp = argparse.ArgumentParser()
@@ -270,7 +268,7 @@ def main(ctx: Context):
                 ("tile64", ["__LP64__", "__tilegx__"]),
             ],
             "x86": [
-                ("i386", ["__i386__"]),
+                ("i386", []),
                 ("x32", ["__ILP32__"]),
                 ("x86_64", ["__LP64__"]),
             ],
@@ -287,10 +285,11 @@ def main(ctx: Context):
         if wanted_arch not in WANTED_ARCHES:
             continue
 
+<<<<<<< HEAD
         wanted_arch = LINUX_GNU_TRANSLATION.get(wanted_arch, wanted_arch)
 
-        pathlib.Path(wanted_arch).mkdir(exist_ok=True)
-
+=======
+>>>>>>> sysdeps/linux: generate complete syscall lists instead
         with open(wanted_arch + "/syscallnos.h", "w") as f:
             print("#ifndef __MLIBC_SYSCALLNOS_h", file=f)
             print("#define __MLIBC_SYSCALLNOS_h", file=f)

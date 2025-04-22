@@ -71,6 +71,4 @@ int main() {
 	test(1);
 	fprintf(stderr, "without buffering...\n");
 	test(0);
-
-	return 0;
 }

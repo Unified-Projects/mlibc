@@ -73,22 +73,6 @@ char *nl_langinfo(nl_item item) {
 				__ensure(!"ABDAY_* constants don't seem to be contiguous!");
 				__builtin_unreachable();
 		}
-	}else if(item == D_FMT) {
-		return const_cast<char *>("%m/%d/%y");
-	}else if(item == T_FMT) {
-		return const_cast<char *>("%H:%M:%S");
-	}else if(item == T_FMT_AMPM) {
-		return const_cast<char *>("%I:%M:%S %p");
-	}else if(item == D_T_FMT) {
-		return const_cast<char *>("%a %b %e %T %Y");
-	} else if (item == RADIXCHAR) {
-		return const_cast<char *>(".");
-	} else if (item == THOUSEP) {
-		return const_cast<char *>("");
-	}else if(item == YESEXPR) {
-		return const_cast<char *>("^[yY]");
-	}else if(item == NOEXPR) {
-		return const_cast<char *>("^[nN]");
 	}else{
 		mlibc::infoLogger() << "mlibc: nl_langinfo item "
 				<< item << " is not implemented properly" << frg::endlog;

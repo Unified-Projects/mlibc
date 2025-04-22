@@ -50,6 +50,4 @@ int main()
 	fflush(stderr);
 	assert(counter == 10000);
 	assert(uninitialized == 1);
-
-	return 0;
 }

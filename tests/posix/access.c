@@ -27,6 +27,4 @@ int main() {
 	assert(access(TEST_FILE, X_OK) == -1);
 
 	unlink(TEST_FILE);
-
-	return 0;
 }

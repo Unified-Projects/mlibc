@@ -7,14 +7,12 @@
 extern "C" {
 #endif
 
-/* TODO: This assumes x86-64. */
-
-struct user_fpregs_struct {
+typedef struct user_fpregs_struct {
 	uint16_t cwd, swd, ftw, fop;
 	uint64_t rip, rdp;
 	uint32_t mxcsr, mxcr_mask;
 	uint32_t st_space[32], xmm_space[64], padding[24];
-};
+} elf_fpregset_t;
 
 struct user_regs_struct {
 	unsigned long r15, r14, r13, r12, rbp, rbx, r11, r10, r9, r8;
@@ -43,9 +41,5 @@ struct user {
 #ifdef __cplusplus
 }
 #endif
-
-#define PAGE_SHIFT 12
-#define PAGE_SIZE (1UL << PAGE_SHIFT)
-#define PAGE_MASK (~(PAGE_SIZE - 1))
 
 #endif

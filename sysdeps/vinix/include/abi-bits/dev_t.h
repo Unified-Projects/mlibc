@@ -1,1 +1,1 @@
-../../../../abis/linux/dev_t.h
+../../../../abis/mlibc/dev_t.h

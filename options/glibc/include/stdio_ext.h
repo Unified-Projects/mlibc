@@ -12,31 +12,26 @@
 extern "C" {
 #endif
 
-#ifndef __MLIBC_ABI_ONLY
-
-size_t __fbufsize(FILE *__stream);
-size_t __fpending(FILE *__stream);
-int __flbf(FILE *__stream);
-int __freadable(FILE *__stream);
-int __fwritable(FILE *__stream);
-int __freading(FILE *__stream);
-int __fwriting(FILE *__stream);
-int __fsetlocking(FILE *__stream, int __type);
-void __fpurge(FILE *__stream);
+size_t __fbufsize(FILE *);
+size_t __fpending(FILE *);
+int __flbf(FILE *);
+int __freadable(FILE *);
+int __fwritable(FILE *);
+int __freading(FILE *);
+int __fwriting(FILE *);
+int __fsetlocking(FILE *, int);
+void __fpurge(FILE *);
 
 void _flushlbf(void);
 
-/* The following functions are defined by musl. */
+// The following functions are defined by musl.
 
-size_t __freadahead(FILE *__stream);
-const char *__freadptr(FILE *__stream, size_t *__size);
-void __freadptrinc(FILE *, size_t);
-void __fseterr(FILE *__stream);
-
-#endif /* !__MLIBC_ABI_ONLY */
+size_t __freadahead(FILE *);
+const char *__freadptr(FILE *, size_t *);
+void __fseterr(FILE *);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _STDIO_EXT_H */
+#endif // _STDIO_EXT_H

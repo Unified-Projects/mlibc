@@ -3,6 +3,6 @@
 
 #include <bits/types.h>
 
-typedef long suseconds_t;
+typedef __mlibc_int64 suseconds_t;
 
 #endif /* _ABIBITS_SUSECONDS_T_H */

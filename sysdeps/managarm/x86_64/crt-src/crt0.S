@@ -2,7 +2,6 @@
 .section .text
 .global _start
 _start:
-	mov %rsp, %rdi
-	mov $main, %rsi
+	mov $main, %rdi
 	call __mlibc_entry
 

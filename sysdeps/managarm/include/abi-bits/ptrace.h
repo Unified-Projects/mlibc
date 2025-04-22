@@ -1,1 +1,1 @@
-../../../../abis/linux/ptrace.h
+../../../../abis/mlibc/ptrace.h

@@ -1,1 +1,1 @@
-../../../../abis/linux/seek-whence.h
+../../../../abis/mlibc/seek-whence.h

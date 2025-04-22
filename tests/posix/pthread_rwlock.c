@@ -111,6 +111,4 @@ int main() {
 	test_read_prevents_write();
 	test_read_allows_read();
 	test_attr();
-
-	return 0;
 }

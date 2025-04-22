@@ -7,26 +7,20 @@ extern "C" {
 #endif
 
 #include <bits/size_t.h>
-#include <mlibc-config.h>
 
-#ifndef __MLIBC_ABI_ONLY
+// [7.22.3] Memory management functions
+void *calloc(size_t count, size_t size);
+void free(void *pointer);
+void *malloc(size_t size);
+void *realloc(void *pointer, size_t size);
+void *memalign(size_t, size_t);
 
-/* [7.22.3] Memory management functions */
-void *calloc(size_t __count, size_t __size);
-void free(void *__pointer);
-void *malloc(size_t __size);
-void *realloc(void *__pointer, size_t __size);
-void *memalign(size_t __alignment, size_t __size);
-
-#if __MLIBC_GLIBC_OPTION
-#include <bits/glibc/glibc_malloc.h>
-#endif
-
-#endif /* !__MLIBC_ABI_ONLY */
+// GNU extension
+size_t malloc_usable_size(void *ptr);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _MALLOC_H */
+#endif // _MALLOC_H
 

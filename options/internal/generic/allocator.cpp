@@ -7,7 +7,7 @@
 #include <mlibc/internal-sysdeps.hpp>
 #include <internal-config.h>
 
-#if !MLIBC_DEBUG_ALLOCATOR
+#ifndef MLIBC_DEBUG_ALLOCATOR
 
 // --------------------------------------------------------
 // Globals
@@ -186,19 +186,6 @@ void *MemoryAllocator::reallocate(void *ptr, size_t size) {
 	return newArea;
 }
 
-size_t MemoryAllocator::get_size(void *ptr) {
-	if constexpr (logAllocations)
-		mlibc::infoLogger() << "MemoryAllocator::get_size(" << ptr << ")" << frg::endlog;
-
-	uintptr_t page_addr = reinterpret_cast<uintptr_t>(ptr) & ~size_t{pageSize - 1};
-	AllocatorMeta *meta = reinterpret_cast<AllocatorMeta *>(page_addr - pageSize);
-
-	if (meta->magic != allocatorMagic)
-		mlibc::panicLogger() << "Invalid allocator metadata magic in MemoryAllocator::get_size" << frg::endlog;
-
-	return meta->allocatedSize;
-}
-
 MemoryAllocator &getAllocator() {
 	// use frg::eternal to prevent a call to __cxa_atexit().
 	// this is necessary because __cxa_atexit() call this function.
@@ -206,4 +193,4 @@ MemoryAllocator &getAllocator() {
 	return singleton.get();
 }
 
-#endif /* !MLIBC_DEBUG_ALLOCATOR */
+#endif

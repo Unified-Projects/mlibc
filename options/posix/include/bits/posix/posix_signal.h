@@ -12,7 +12,6 @@ extern "C" {
 #include <bits/sigset_t.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <mlibc-config.h>
 
 #define FPE_INTDIV      1       /* integer divide by zero */
 #define FPE_INTOVF      2       /* integer overflow */
@@ -26,8 +25,7 @@ extern "C" {
 #define TRAP_BRKPT      1       /* process breakpoint */
 #define TRAP_TRACE      2       /* process trace trap */
 
-#if defined(__x86_64__)
-/* Start Glibc stuff */
+// Start Glibc stuff
 
 struct _libc_fpxreg {
   unsigned short int significand[4];
@@ -54,10 +52,9 @@ struct _libc_fpstate {
 };
 
 typedef struct _libc_fpstate *fpregset_t;
-/* End Glibc stuff */
+// End Glibc stuff
 
 typedef unsigned long int greg_t;
-#endif
 
 #define FPE_INTDIV      1       /* integer divide by zero */
 #define FPE_INTOVF      2       /* integer overflow */
@@ -71,43 +68,33 @@ typedef unsigned long int greg_t;
 #define TRAP_BRKPT      1       /* process breakpoint */
 #define TRAP_TRACE      2       /* process trace trap */
 
-#ifndef __MLIBC_ABI_ONLY
+// functions to block / wait for signals
+int sigsuspend(const sigset_t *);
+int sigprocmask(int, const sigset_t *__restrict, sigset_t *__restrict);
 
-/* functions to block / wait for signals */
-int sigsuspend(const sigset_t *__sigmask);
-int sigprocmask(int __how, const sigset_t *__restrict __sigmask, sigset_t *__restrict __oldmask);
+int pthread_sigmask(int, const sigset_t *__restrict, sigset_t *__restrict);
+int pthread_kill(pthread_t, int);
 
-int pthread_sigmask(int __how, const sigset_t *__restrict __sigmask, sigset_t *__restrict __oldmask);
-int pthread_kill(pthread_t __thrd, int __sig);
+// functions to handle signals
+int sigaction(int, const struct sigaction *__restrict, struct sigaction *__restrict);
+int sigpending(sigset_t *);
 
-/* functions to handle signals */
-int sigaction(int __signum, const struct sigaction *__restrict __act, struct sigaction *__restrict __oldact);
-int sigpending(sigset_t *__set);
+int siginterrupt(int sig, int flag);
 
-int siginterrupt(int __sig, int __flag);
+int sigaltstack(const stack_t *__restrict ss, stack_t *__restrict oss);
 
-int sigaltstack(const stack_t *__restrict __ss, stack_t *__restrict __oss);
+// functions to raise signals
+int kill(pid_t, int);
+int killpg(int, int);
 
-/* functions to raise signals */
-int kill(pid_t __pid, int __number);
-int killpg(int __pgrp, int __sig);
+int sigtimedwait(const sigset_t *set, siginfo_t *info, const struct timespec *timeout);
 
-int sigtimedwait(const sigset_t *__restrict __set, siginfo_t *__restrict __info, const struct timespec *__restrict __timeout);
-int sigwait(const sigset_t *__restrict __set, int *__restrict __sig);
-int sigwaitinfo(const sigset_t *__restrict __set, siginfo_t *__restrict __info);
-
-/* Glibc extension */
-#if __MLIBC_GLIBC_OPTION
-int sigisemptyset(const sigset_t *__set);
-#endif /* __MLIBC_GLIBC_OPTION */
-
-int sigqueue(pid_t __pid, int __sig, const union sigval __value);
-
-#endif /* !__MLIBC_ABI_ONLY */
+int sigwait(const sigset_t *set, int *sig);
+int sigwaitinfo(const sigset_t *__restrict set, siginfo_t *__restrict info);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* MLIBC_POSIX_SIGNAL_H */
+#endif // MLIBC_POSIX_SIGNAL_H
 

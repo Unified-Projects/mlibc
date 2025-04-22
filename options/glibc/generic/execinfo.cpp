@@ -1,11 +1,9 @@
 #include <execinfo.h>
-
 #include <bits/ensure.h>
-#include <mlibc/debug.hpp>
 
 int backtrace(void **, int) {
-	mlibc::infoLogger() << "mlibc: backtrace() is a stub!" << frg::endlog;
-	return 0;
+	__ensure(!"Not implemented");
+	__builtin_unreachable();
 }
 
 char **backtrace_symbols(void *const *, int) {

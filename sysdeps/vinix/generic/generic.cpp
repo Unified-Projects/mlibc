@@ -15,25 +15,6 @@
 	__builtin_unreachable();                    \
 }
 
-#ifndef MLIBC_BUILDING_RTLD
-
-namespace {
-
-int fcntl_helper(int fd, int request, int *result, ...) {
-	va_list args;
-	va_start(args, result);
-	if(!mlibc::sys_fcntl) {
-		return ENOSYS;
-	}
-	int ret = mlibc::sys_fcntl(fd, request, args, result);
-	va_end(args);
-	return ret;
-}
-
-}
-
-#endif
-
 namespace mlibc {
 
 void sys_libc_log(const char *message) {
@@ -49,28 +30,6 @@ void sys_libc_panic() {
 void sys_exit(int status) {
 	__syscall(15, status);
 	__builtin_unreachable();
-}
-
-#ifndef MLIBC_BUILDING_RTLD
-
-[[noreturn]] void sys_thread_exit() {
-	for (;;);
-	__builtin_unreachable();
-}
-
-extern "C" void __mlibc_thread_entry();
-
-int sys_clone(void *tcb, pid_t *pid_out, void *stack) {
-	(void)tcb;
-
-	__syscall_ret ret = __syscall(65, (uintptr_t)__mlibc_thread_entry, (uintptr_t)stack);
-	int ret_value = (int)ret.ret;
-	if (ret_value == -1) {
-		return ret.errno;
-	}
-
-	*pid_out = ret_value;
-	return 0;
 }
 
 int sys_kill(pid_t pid, int signal) {
@@ -113,14 +72,10 @@ int sys_tcsetattr(int fd, int optional_action, const struct termios *attr) {
 	return 0;
 }
 
-#endif
-
 int sys_tcb_set(void *pointer) {
 	__syscall(7, pointer);
 	return 0;
 }
-
-#ifndef MLIBC_BUILDING_RTLD
 
 int sys_ppoll(struct pollfd *fds, int nfds, const struct timespec *timeout,
 		const sigset_t *sigmask, int *num_events) {
@@ -137,19 +92,45 @@ int sys_poll(struct pollfd *fds, nfds_t count, int timeout, int *num_events) {
 	struct timespec ts;
 	ts.tv_sec = timeout / 1000;
 	ts.tv_nsec = (timeout % 1000) * 1000000;
-	return sys_ppoll(fds, count, timeout < 0 ? NULL : &ts, NULL, num_events);
+	return sys_ppoll(fds, count, &ts, NULL, num_events);
 }
 
+int sys_epoll_pwait(int epfd, struct epoll_event *ev, int n,
+					int timeout, const sigset_t *sigmask, int *raised) {
+	__syscall_ret ret = __syscall(49, epfd, ev, n, timeout, sigmask);
+
+	if (ret.errno != 0)
+		return ret.errno;
+
+	*raised = (int)ret.ret;
+	return 0;
+}
+
+int sys_epoll_create(int flags, int *fd) {
+	__syscall_ret ret = __syscall(37, flags);
+
+	if (ret.errno != 0)
+		return ret.errno;
+
+	*fd = (int)ret.ret;
+	return 0;
+}
+
+int sys_epoll_ctl(int epfd, int mode, int fd, struct epoll_event *ev) {
+	__syscall_ret ret = __syscall(47, epfd, mode, fd, ev);
+
+	return ret.errno;
+}
+
+#ifndef MLIBC_BUILDING_RTDL
 int sys_pselect(int nfds, fd_set *read_set, fd_set *write_set,
 		fd_set *except_set, const struct timespec *timeout,
 		const sigset_t *sigmask, int *num_events) {
-	struct pollfd *fds = (struct pollfd *)calloc(nfds, sizeof(struct pollfd));
-	if (fds == NULL) {
-		return ENOMEM;
-	}
+	struct pollfd *fds = (struct pollfd *)malloc(nfds * sizeof(struct pollfd));
 
 	for (int i = 0; i < nfds; i++) {
 		struct pollfd *fd = &fds[i];
+		memset(fd, 0, sizeof(struct pollfd));
 
 		if (read_set && FD_ISSET(i, read_set))
 			fd->events |= POLLIN; // TODO: Additional events.
@@ -202,15 +183,14 @@ int sys_pselect(int nfds, fd_set *read_set, fd_set *write_set,
 	free(fds);
 
 	if (read_set)
-		*read_set = res_read_set;
+		memcpy(read_set, &res_read_set, sizeof(fd_set));
 	if (write_set)
-		*write_set = res_write_set;
+		memcpy(write_set, &res_write_set, sizeof(fd_set));
 	if (except_set)
-		*except_set = res_except_set;
+		memcpy(except_set, &res_except_set, sizeof(fd_set));
 
 	return 0;
 }
-
 #endif
 
 int sys_futex_wait(int *pointer, int expected, const struct timespec *time) {
@@ -228,10 +208,21 @@ int sys_futex_wake(int *pointer) {
 	if (ret.errno != 0)
 		return ret.errno;
 
-	return 0;
+	int num_woken = ret.ret;
+
+	__ensure(num_woken >= 0 && num_woken <= 1);
+	return num_woken;
 }
 
-#ifndef MLIBC_BUILDING_RTLD
+int sys_timerfd_create(int flags, int *fd) {
+	__syscall_ret ret = __syscall(54, 0, flags);
+
+	if (ret.errno != 0)
+		return ret.errno;
+
+	*fd = (int)ret.ret;
+	return 0;
+}
 
 int sys_ioctl(int fd, unsigned long request, void *arg, int *result) {
 	__syscall_ret ret = __syscall(9, fd, request, arg);
@@ -262,10 +253,8 @@ int sys_getcwd(char *buffer, size_t size) {
 	return 0;
 }
 
-#endif
-
 int sys_openat(int dirfd, const char *path, int flags, mode_t mode, int *fd) {
-	__syscall_ret ret = __syscall(2, dirfd, path, flags, mode);
+	__syscall_ret ret = __syscall(2, dirfd, path, flags, 0);
 
 	if (ret.errno != 0)
 		return ret.errno;
@@ -277,8 +266,6 @@ int sys_openat(int dirfd, const char *path, int flags, mode_t mode, int *fd) {
 int sys_open(const char *path, int flags, mode_t mode, int *fd) {
 	return sys_openat(AT_FDCWD, path, flags, mode, fd);
 }
-
-#ifndef MLIBC_BUILDING_RTLD
 
 int sys_open_dir(const char *path, int *handle) {
 	return sys_open(path, O_DIRECTORY, 0, handle);
@@ -299,8 +286,6 @@ int sys_read_entries(int fd, void *buffer, size_t max_size, size_t *bytes_read) 
 	*bytes_read = sizeof(struct dirent);
 	return 0;
 }
-
-#endif
 
 int sys_close(int fd) {
 	__syscall_ret ret = __syscall(6, fd);
@@ -332,8 +317,6 @@ int sys_read(int fd, void *buf, size_t count, ssize_t *bytes_read) {
 	*bytes_read = (ssize_t)ret.ret;
 	return 0;
 }
-
-#ifndef MLIBC_BUILDING_RTLD
 
 int sys_write(int fd, const void *buf, size_t count, ssize_t *bytes_written) {
 	__syscall_ret ret = __syscall(4, fd, buf, count);
@@ -392,16 +375,10 @@ int sys_fchmod(int fd, mode_t mode) {
 }
 
 int sys_rmdir(const char *path) {
-	__syscall_ret ret = __syscall(37, AT_FDCWD, path);
-
-	if (ret.errno != 0) {
-		return ret.errno;
-	}
-
+	(void)path;
+	mlibc::infoLogger() << "mlibc: " << __func__ << " is a stub!\n" << frg::endlog;
 	return 0;
 }
-
-#endif
 
 int sys_vm_map(void *hint, size_t size, int prot, int flags,
 			   int fd, off_t offset, void **window) {
@@ -438,10 +415,9 @@ int sys_anon_allocate(size_t size, void **pointer) {
 }
 
 int sys_anon_free(void *pointer, size_t size) {
-	return sys_vm_unmap(pointer, size);
+	(void)pointer; (void)size;
+	return 0;
 }
-
-#ifndef MLIBC_BUILDING_RTLD
 
 pid_t sys_getpid() {
 	__syscall_ret ret = __syscall(31);
@@ -515,28 +491,31 @@ int sys_clock_get(int clock, time_t *secs, long *nanos) {
 }
 
 int sys_stat(fsfd_target fsfdt, int fd, const char *path, int flags, struct stat *statbuf) {
-	__syscall_ret ret;
 	switch (fsfdt) {
 		case fsfd_target::fd: {
-			ret = __syscall(10, fd, statbuf);
-			break;
+			__syscall_ret ret = __syscall(10, fd, statbuf);
+			if (ret.errno != 0)
+				return ret.errno;
+			return ret.ret;
 		}
 		case fsfd_target::path: {
-			ret = __syscall(11, AT_FDCWD, path, statbuf, flags);
-			break;
+			__syscall_ret ret = __syscall(11, AT_FDCWD, path, statbuf, flags);
+			if (ret.errno != 0)
+				return ret.errno;
+			return ret.ret;
 		}
 		case fsfd_target::fd_path: {
-			ret = __syscall(11, fd, path, statbuf, flags);
-			break;
+			__syscall_ret ret = __syscall(11, fd, path, statbuf, flags);
+			if (ret.errno != 0)
+				return ret.errno;
+			return ret.ret;
 		}
 		default: {
 			__ensure(!"stat: Invalid fsfdt");
 			__builtin_unreachable();
 		}
 	}
-	if (ret.errno != 0)
-		return ret.errno;
-	return ret.ret;
+	return 0;
 }
 
 int sys_faccessat(int dirfd, const char *pathname, int mode, int flags) {
@@ -611,8 +590,8 @@ int sys_connect(int fd, const struct sockaddr *addr_ptr, socklen_t addr_length) 
 	return ret.errno;
 }
 
-int sys_accept(int fd, int *newfd, struct sockaddr *addr_ptr, socklen_t *addr_length, int flags) {
-	__syscall_ret ret = __syscall(61, fd, addr_ptr, addr_length);
+int sys_accept(int fd, int *newfd, struct sockaddr *addr_ptr, socklen_t *addr_length) {
+	__syscall_ret ret = __syscall(61, fd);
 
 	if (ret.errno != 0) {
 		return ret.errno;
@@ -620,16 +599,10 @@ int sys_accept(int fd, int *newfd, struct sockaddr *addr_ptr, socklen_t *addr_le
 
 	*newfd = ret.ret;
 
-	if(flags & SOCK_NONBLOCK) {
-		int fcntl_ret = 0;
-		fcntl_helper(*newfd, F_GETFL, &fcntl_ret);
-		fcntl_helper(*newfd, F_SETFL, &fcntl_ret, fcntl_ret | O_NONBLOCK);
-	}
-
-	if(flags & SOCK_CLOEXEC) {
-		int fcntl_ret = 0;
-		fcntl_helper(*newfd, F_GETFD, &fcntl_ret);
-		fcntl_helper(*newfd, F_SETFD, &fcntl_ret, fcntl_ret | FD_CLOEXEC);
+	if(addr_ptr && addr_length) {
+		if(int e = mlibc::sys_peername(*newfd, addr_ptr, *addr_length, addr_length); e) {
+			return e;
+		}
 	}
 
 	return 0;
@@ -835,7 +808,7 @@ again:
 	return 0;
 }
 
-int sys_getgroups(size_t size, gid_t *list, int *_ret) {
+int sys_getgroups(size_t size, const gid_t *list, int *_ret) {
 	__syscall_ret ret = __syscall(38, size, list);
 
 	if (ret.errno != 0)
@@ -898,16 +871,18 @@ int sys_sleep(time_t *secs, long *nanos) {
 	return 0;
 }
 
-int sys_getitimer(int, struct itimerval *) {
-	mlibc::infoLogger() << "mlibc: sys_getitimer() is unimplemented" << frg::endlog;
-	return ENOSYS;
+
+int sys_getitimer(int which, struct itimerval *curr_value) {
+	__syscall_ret ret = __syscall(63, which, curr_value);
+
+	return ret.errno;
 }
 
-int sys_setitimer(int, const struct itimerval *, struct itimerval *) {
-	mlibc::infoLogger() << "mlibc: sys_setitimer() is unimplemented" << frg::endlog;
-	return ENOSYS;
-}
 
-#endif
+int sys_setitimer(int which, const struct itimerval *new_value, struct itimerval *old_value) {
+	__syscall_ret ret = __syscall(64, which, new_value, old_value);
+
+	return ret.errno;
+}
 
 } // namespace mlibc

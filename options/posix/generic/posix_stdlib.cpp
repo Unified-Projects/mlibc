@@ -10,12 +10,13 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <asm/ioctls.h>
 
 #include <frg/small_vector.hpp>
 #include <mlibc/allocator.hpp>
 #include <mlibc/debug.hpp>
 #include <mlibc/posix-sysdeps.hpp>
-#include <mlibc/rtld-config.hpp>
+#include <mlibc/rtdl-config.hpp>
 
 namespace {
 	constexpr bool debugPathResolution = false;
@@ -75,53 +76,12 @@ long random(void) {
 	return k;
 }
 
-// erand, drand and srand are borrowed from musl
-namespace {
-
-unsigned short seed_48[7] = { 0, 0, 0, 0xe66d, 0xdeec, 0x5, 0xb };
-
-uint64_t eand48_step(unsigned short *xi, unsigned short *lc) {
-	uint64_t x = xi[0] | (xi[1] + 0U) << 16 | (xi[2] + 0ULL) << 32;
-	uint64_t a = lc[0] | (lc[1] + 0U) << 16 | (lc[2] + 0ULL) << 32;
-	x = a*x + lc[3];
-	xi[0] = x;
-	xi[1] = x>>16;
-	xi[2] = x>>32;
-	return x & 0xffffffffffffull;
-}
-
-} // namespace
-
-double erand48(unsigned short s[3]) {
-	union {
-		uint64_t u;
-		double f;
-	} x = { 0x3ff0000000000000ULL | eand48_step(s, seed_48+3)<<4 };
-	return x.f - 1.0;
-}
-
 double drand48(void) {
-	return erand48(seed_48);
-}
-
-unsigned short *seed48(unsigned short *s) {
-	static unsigned short p[3];
-	memcpy(p, seed_48, sizeof p);
-	memcpy(seed_48, s, sizeof p);
-	return p;
-}
-
-void srand48(long int seed) {
-	unsigned short arr[3] = { 0x330e, (unsigned short) seed, (unsigned short) (seed>>16) };
-	seed48(arr);
-}
-
-long jrand48(unsigned short [3]) {
 	__ensure(!"Not implemented");
 	__builtin_unreachable();
 }
 
-long int mrand48(void) {
+void srand48(long int) {
 	__ensure(!"Not implemented");
 	__builtin_unreachable();
 }
@@ -179,18 +139,16 @@ char *setstate(char *state) {
 // Path handling.
 // ----------------------------------------------------------------------------
 
-
-int mkostemps(char *pattern, int suffixlen, int flags) {
+int mkostemp(char *pattern, int flags) {
+	flags &= ~O_WRONLY;
 	auto n = strlen(pattern);
-	if(n < (6 + static_cast<size_t>(suffixlen))) {
+	__ensure(n >= 6);
+	if(n < 6) {
 		errno = EINVAL;
 		return -1;
 	}
-
-	flags &= ~O_WRONLY;
-
 	for(size_t i = 0; i < 6; i++) {
-		if(pattern[n - (6 + suffixlen) + i] == 'X')
+		if(pattern[n - 6 + i] == 'X')
 			continue;
 		errno = EINVAL;
 		return -1;
@@ -198,9 +156,9 @@ int mkostemps(char *pattern, int suffixlen, int flags) {
 
 	// TODO: Do an exponential search.
 	for(size_t i = 0; i < 999999; i++) {
-		char sfx = pattern[n - suffixlen];
-		__ensure(sprintf(pattern + (n - (6 + suffixlen)), "%06zu", i) == 6);
-		pattern[n - suffixlen] = sfx;
+		__ensure(sprintf(pattern + (n - 6), "%06zu", i) == 6);
+//		mlibc::infoLogger() << "mlibc: mkstemp candidate is "
+//				<< (const char *)pattern << frg::endlog;
 
 		int fd;
 		if(int e = mlibc::sys_open(pattern, O_RDWR | O_CREAT | O_EXCL | flags, S_IRUSR | S_IWUSR, &fd); !e) {
@@ -215,16 +173,8 @@ int mkostemps(char *pattern, int suffixlen, int flags) {
 	return -1;
 }
 
-int mkostemp(char *pattern, int flags) {
-	return mkostemps(pattern, flags, 0);
-}
-
 int mkstemp(char *path) {
 	return mkostemp(path, 0);
-}
-
-int mkstemps(char *pattern, int suffixlen) {
-	return mkostemps(pattern, suffixlen, 0);
 }
 
 char *mkdtemp(char *pattern) {
@@ -365,14 +315,9 @@ char *realpath(const char *path, char *out) {
 
 			if (path[0] == '/') {
 				// Absolute path, replace resolv
-
-				// Ignore any trailing '/' so all results will not have one to keep consistency.
-				while(sz > 1 && path[sz - 1] == '/')
-					sz -= 1;
-
-				resolv.resize(sz + 1);
-				strncpy(resolv.data(), path, sz);
-				resolv.data()[sz] = 0;
+				resolv.resize(sz);
+				strncpy(resolv.data(), path, sz - 1);
+				resolv.data()[sz - 1] = 0;
 
 				if(debugPathResolution) {
 					mlibc::infoLogger() << "mlibc realpath(): Symlink is absolute, resolv: '"
@@ -384,10 +329,9 @@ char *realpath(const char *path, char *out) {
 				resolv[rsz - 1] = 0;
 
 				auto lsz = lnk.size();
-				lnk.resize((lsz - ls) + sz + 1);
+				lnk.resize((lsz - ls) + sz);
 				memmove(lnk.data() + sz, lnk.data() + ls, lsz - ls);
 				memcpy(lnk.data(), path, sz);
-				lnk[(lsz - ls) + sz] = 0;
 
 				ls = 0;
 
@@ -467,24 +411,22 @@ char *realpath(const char *path, char *out) {
 // ----------------------------------------------------------------------------
 
 int ptsname_r(int fd, char *buffer, size_t length) {
-	auto sysdep = MLIBC_CHECK_OR_ENOSYS(mlibc::sys_ptsname, ENOSYS);
-
-	if(int e = sysdep(fd, buffer, length); e)
-		return e;
-
+	int index;
+	if(ioctl(fd, TIOCGPTN, &index))
+		return -1;
+	if((size_t)snprintf(buffer, length, "/dev/pts/%d", index) >= length) {
+		errno = ERANGE;
+		return -1;
+	}
 	return 0;
 }
 
 char *ptsname(int fd) {
+	int index;
 	static char buffer[128];
-
-	auto sysdep = MLIBC_CHECK_OR_ENOSYS(mlibc::sys_ptsname, NULL);
-
-	if(int e = sysdep(fd, buffer, 128); e) {
-		errno = e;
+	if(ioctl(fd, TIOCGPTN, &index))
 		return NULL;
-	}
-
+	snprintf(buffer, 128, "/dev/pts/%d", index);
 	return buffer;
 }
 
@@ -499,23 +441,17 @@ int posix_openpt(int flags) {
 }
 
 int unlockpt(int fd) {
-	auto sysdep = MLIBC_CHECK_OR_ENOSYS(mlibc::sys_unlockpt, -1);
-
-	if(int e = sysdep(fd); e) {
-		errno = e;
-		return -1;
-	}
-
-	return 0;
+	int unlock = 0;
+	return ioctl(fd, TIOCSPTLCK, &unlock);
 }
 
 int grantpt(int) {
 	return 0;
 }
 
-double strtod_l(const char *__restrict__ nptr, char ** __restrict__ endptr, locale_t) {
-	mlibc::infoLogger() << "mlibc: strtod_l ignores locale!" << frg::endlog;
-	return strtod(nptr, endptr);
+double strtod_l(const char *__restrict__, char ** __restrict__, locale_t) {
+	__ensure(!"Not implemented");
+	__builtin_unreachable();
 }
 
 long double strtold_l(const char *__restrict__, char ** __restrict__, locale_t) {
@@ -533,13 +469,13 @@ int strcoll_l(const char *, const char *, locale_t) {
 	__builtin_unreachable();
 }
 
-int getsubopt(char **__restrict__, char *const *__restrict__, char **__restrict__) {
+int getloadavg(double *, int) {
 	__ensure(!"Not implemented");
 	__builtin_unreachable();
 }
 
 char *secure_getenv(const char *name) {
-	if (mlibc::rtldConfig().secureRequired)
+	if (mlibc::rtdlConfig().secureRequired)
 		return NULL;
 	else
 		return getenv(name);
@@ -554,6 +490,7 @@ void *reallocarray(void *ptr, size_t m, size_t n) {
 	return realloc(ptr, m * n);
 }
 
-char *canonicalize_file_name(const char *name) {
-	return realpath(name, NULL);
+char *canonicalize_file_name(const char *) {
+	__ensure(!"Not implemented");
+	__builtin_unreachable();
 }

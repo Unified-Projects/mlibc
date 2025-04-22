@@ -1,1 +1,1 @@
-../../../../abis/linux/poll.h
+../../../../abis/mlibc/poll.h

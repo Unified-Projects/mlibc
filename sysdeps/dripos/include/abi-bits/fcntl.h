@@ -1,1 +1,1 @@
-../../../../abis/dripos/fcntl.h
+../../../../abis/mlibc/fcntl.h

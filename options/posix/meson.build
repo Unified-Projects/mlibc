@@ -1,20 +1,19 @@
 
-if not posix_option
+if disable_posix_option
 	subdir_done()
 endif
 libc_sources += files(
-	'generic/arpa-inet.cpp',
-	'generic/dirent.cpp',
-	'generic/dlfcn.cpp',
-	'generic/fcntl.cpp',
-	'generic/ftw.cpp',
-	'generic/grp.cpp',
-	'generic/langinfo.cpp',
-	'generic/libgen.cpp',
+	'generic/arpa-inet-stubs.cpp',
+	'generic/dirent-stubs.cpp',
+	'generic/dlfcn-stubs.cpp',
+	'generic/fcntl-stubs.cpp',
+	'generic/ftw-stubs.cpp',
+	'generic/grp-stubs.cpp',
+	'generic/langinfo-stubs.cpp',
+	'generic/libgen-stubs.cpp',
 	'generic/lookup.cpp',
-	'generic/netdb.cpp',
-	'generic/net-if.cpp',
-	'generic/poll.cpp',
+	'generic/netdb-stubs.cpp',
+	'generic/net-if-stubs.cpp',
 	'generic/posix_ctype.cpp',
 	'generic/posix-file-io.cpp',
 	'generic/posix_locale.cpp',
@@ -23,39 +22,39 @@ libc_sources += files(
 	'generic/posix_stdlib.cpp',
 	'generic/posix_string.cpp',
 	'generic/posix_time.cpp',
-	'generic/pthread.cpp',
-	'generic/pwd.cpp',
+	'generic/pthread-stubs.cpp',
+	'generic/pwd-stubs.cpp',
 	'generic/resolv_conf.cpp',
-	'generic/sched.cpp',
-	'generic/spawn.cpp',
-	'generic/strings.cpp',
+	'generic/sched-stubs.cpp',
+	'generic/spawn-stubs.cpp',
+	'generic/strings-stubs.cpp',
 	'generic/services.cpp',
-	'generic/sys-file.cpp',
-	'generic/syslog.cpp',
-	'generic/sys-mman.cpp',
-	'generic/sys-resource.cpp',
-	'generic/sys-select.cpp',
+	'generic/sys-file-stubs.cpp',
+	'generic/syslog-stubs.cpp',
+	'generic/sys-mman-stubs.cpp',
+	'generic/sys-resource-stubs.cpp',
+	'generic/sys-select-stubs.cpp',
 	'generic/sys-shm.cpp',
-	'generic/sys-socket.cpp',
-	'generic/sys-stat.cpp',
-	'generic/sys-statvfs.cpp',
+	'generic/sys-socket-stubs.cpp',
+	'generic/sys-statfs-stubs.cpp',
+	'generic/sys-stat-stubs.cpp',
+	'generic/sys-statvfs-stubs.cpp',
 	'generic/sys-times.cpp',
-	'generic/sys-time.cpp',
+	'generic/sys-time-stubs.cpp',
 	'generic/sys-uio.cpp',
 	'generic/sys-utsname.cpp',
-	'generic/sys-wait.cpp',
-	'generic/termios.cpp',
-	'generic/unistd.cpp',
-	'generic/utime.cpp',
-	'generic/ucontext.cpp',
-	'generic/semaphore.cpp',
+	'generic/sys-wait-stubs.cpp',
+	'generic/termios-stubs.cpp',
+	'generic/unistd-stubs.cpp',
+	'generic/utime-stubs.cpp',
+	'generic/ucontext-stubs.cpp',
+	'generic/semaphore-stubs.cpp',
 	'generic/search.cpp',
 	'generic/sys-msg.cpp',
 	'generic/sys-sem.cpp',
 	'generic/sys-ipc.cpp',
 	'generic/time.cpp',
-	'generic/wordexp.cpp',
-	'generic/mqueue.cpp'
+	'generic/wordexp-stubs.cpp'
 )
 
 if not headers_only
@@ -68,8 +67,7 @@ if not headers_only
 		'musl-generic-regex/tre-mem.c',
 		pic: true,
 		include_directories: libc_include_dirs,
-		dependencies: libc_deps,
-		c_args: ['-Wno-unused', '-Wno-implicit', '-Wno-parentheses', '-Wno-sign-compare', '-Wno-attributes', '-Wno-unknown-pragmas', '-Wno-implicit-fallthrough', '-Wno-unused-parameter']
+		c_args: ['-Wno-unused', '-Wno-implicit', '-Wno-parentheses', '-Wno-sign-compare', '-Wno-attributes', '-Wno-unknown-pragmas', '-Wno-implicit-fallthrough']
 	)
 endif
 
@@ -110,22 +108,15 @@ if not no_headers
 	)
 	install_headers(
 		'include/net/if.h',
-		'include/net/if_arp.h',
 		subdir: 'net'
 	)
 	install_headers(
 		'include/netinet/in.h',
 		'include/netinet/ip.h',
 		'include/netinet/tcp.h',
-		'include/netinet/icmp6.h',
-		'include/netinet/if_ether.h',
-		'include/netinet/udp.h',
-		'include/netinet/ip6.h',
-		'include/netinet/ip_icmp.h',
 		subdir: 'netinet'
 	)
 	install_headers(
-		'include/sys/fcntl.h',
 		'include/sys/file.h',
 		'include/sys/ipc.h',
 		'include/sys/mman.h',
@@ -137,6 +128,7 @@ if not no_headers
 		'include/sys/sem.h',
 		'include/sys/shm.h',
 		'include/sys/socket.h',
+		'include/sys/statfs.h',
 		'include/sys/stat.h',
 		'include/sys/statvfs.h',
 		'include/sys/termios.h',
@@ -147,6 +139,7 @@ if not no_headers
 		'include/sys/uio.h',
 		'include/sys/un.h',
 		'include/sys/utsname.h',
+		'include/sys/vfs.h',
 		'include/sys/wait.h',
 		'include/sys/syslog.h',
 		subdir: 'sys'

@@ -1,1 +1,1 @@
-../../../../abis/ironclad/resource.h
+../../../../abis/mlibc/resource.h

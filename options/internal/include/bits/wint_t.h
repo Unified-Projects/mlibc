@@ -1,6 +1,7 @@
 #ifndef MLIBC_WINT_T_H
 #define MLIBC_WINT_T_H
 
-typedef __WINT_TYPE__ wint_t;
+#define __need_wint_t
+#include <stddef.h>
 
-#endif /* MLIBC_WINT_T_H */
+#endif // MLIBC_WINT_T_H

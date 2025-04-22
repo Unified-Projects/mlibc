@@ -20,12 +20,6 @@ void initStackGuard(void *entropy) {
 
 } // namespace mlibc
 
-extern "C" [[noreturn]] void __stack_chk_fail() {
+extern "C" void __stack_chk_fail() {
 	mlibc::panicLogger() << "Stack smashing detected!" << frg::endlog;
-	__builtin_unreachable();
 }
-
-extern "C" [[noreturn, gnu::visibility("hidden")]] void __stack_chk_fail_local() {
-	__stack_chk_fail();
-};
-
