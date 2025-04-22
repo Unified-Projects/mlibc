@@ -5,7 +5,7 @@ sysdep_supported_options = {
 	'bsd': true,
 }
 
-rtld_sources += files(
+rtdl_sources += files(
 	'generic/filesystem.cpp',
 	'generic/unified.cpp',
 )
