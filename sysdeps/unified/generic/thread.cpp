@@ -28,20 +28,21 @@ namespace mlibc {
 
 static constexpr size_t default_stacksize = 0x200000;
 
-int sys_prepare_stack(void **stack, void *entry, void *user_arg, void *tcb, size_t *stack_size, size_t *guard_size, void **stack_base) {
+int sys_prepare_stack(void **stack, void *entry, void *user_arg, void *tcb, size_t *stack_size, size_t *guard_size) {
 	if (!*stack_size)
 		*stack_size = default_stacksize;
 	*guard_size = 0;
 
+	uintptr_t *sp;
 	if (*stack) {
-		*stack_base = *stack;
+		sp = reinterpret_cast<uintptr_t *>(*stack);
 	} else {
-		*stack_base = mmap(nullptr, *stack_size,
+		sp = reinterpret_cast<uintptr_t *>(reinterpret_cast<uintptr_t>(
+					mmap(nullptr, *stack_size,
 						PROT_READ | PROT_WRITE,
-						MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+						MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
+					) + *stack_size);
 	}
-	
-	uintptr_t *sp = reinterpret_cast<uintptr_t *>(reinterpret_cast<uintptr_t>(*stack_base) + *stack_size);
 
 	*--sp = reinterpret_cast<uintptr_t>(tcb);
 	*--sp = reinterpret_cast<uintptr_t>(user_arg);
