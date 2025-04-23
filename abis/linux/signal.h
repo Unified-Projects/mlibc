@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <time.h>
+#include <abi-bits/sigevent.h>
 #include <abi-bits/pid_t.h>
 #include <abi-bits/uid_t.h>
 #include <bits/size_t.h>
@@ -13,11 +14,6 @@
 #define POLL_ERR 4
 #define POLL_PRI 5
 #define POLL_HUP 6
-
-union sigval {
-	int sival_int;
-	void *sival_ptr;
-};
 
 /* struct taken from musl. */
 
@@ -254,15 +250,6 @@ typedef struct __stack {
 
 #include <bits/threads.h>
 
-struct sigevent {
-	union sigval sigev_value;
-	int sigev_notify;
-	int sigev_signo;
-	void (*sigev_notify_function)(union sigval);
-	struct __mlibc_threadattr *sigev_notify_attributes;
-	pid_t sigev_notify_thread_id;
-};
-
 struct sigaction {
 	union {
 		void (*sa_handler)(int);
@@ -332,6 +319,26 @@ struct _fpstate {
 #endif
 };
 
+struct sigcontext {
+#if defined(__x86_64__)
+	unsigned long r8, r9, r10, r11, r12, r13, r14, r15;
+	unsigned long rdi, rsi, rbp, rbx, rdx, rax, rcx, rsp, rip, eflags;
+	unsigned short cs, gs, fs, __pad0;
+	unsigned long err, trapno, oldmask, cr2;
+	struct _fpstate *fpstate;
+	unsigned long __reserved1[8];
+#elif defined(__i386__)
+	unsigned short gs, __gsh, fs, __fsh, es, __esh, ds, __dsh;
+	unsigned long edi, esi, ebp, esp, ebx, edx, ecx, eax;
+	unsigned long trapno, err, eip;
+	unsigned short cs, __csh;
+	unsigned long eflags, esp_at_signal;
+	unsigned short ss, __ssh;
+	struct _fpstate *fpstate;
+	unsigned long oldmask, cr2;
+#endif
+};
+
 typedef struct {
 	unsigned long gregs[NGREG];
 	struct _fpstate *fpregs;
@@ -362,7 +369,7 @@ enum {
 #define REG_TP REG_TP
   REG_S0 = 8,
 #define REG_S0 REG_S0
-  REG_A0 = 10,
+  REG_A0 = 10
 #define REG_A0 REG_A0
 };
 
@@ -400,7 +407,10 @@ typedef struct __ucontext {
 	struct ucontext	*uc_link;
 	stack_t uc_stack;
 	sigset_t uc_sigmask;
-	uint8_t  __unused[1024 / 8 - sizeof(sigset_t)];
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+	uint8_t __unused[1024 / 8 - sizeof(sigset_t)];
+#pragma GCC diagnostic pop
 	mcontext_t uc_mcontext;
 } ucontext_t;
 
@@ -485,6 +495,138 @@ typedef struct __ucontext {
 	struct __ucontext *uc_link;
 	stack_t uc_stack;
 	sigset_t uc_sigmask;
+	mcontext_t uc_mcontext;
+} ucontext_t;
+
+#elif defined (__m68k__)
+
+/* taken from musl */
+
+#if defined(_GNU_SOURCE) || defined(__MLIBC_BUILDING_MLIBC)
+enum { R_D0 = 0 };
+#define R_D0 R_D0
+enum { R_D1 = 1 };
+#define R_D1 R_D1
+enum { R_D2 = 2 };
+#define R_D2 R_D2
+enum { R_D3 = 3 };
+#define R_D3 R_D3
+enum { R_D4 = 4 };
+#define R_D4 R_D4
+enum { R_D5 = 5 };
+#define R_D5 R_D5
+enum { R_D6 = 6 };
+#define R_D6 R_D6
+enum { R_D7 = 7 };
+#define R_D7 R_D7
+enum { R_A0 = 8 };
+#define R_A0 R_A0
+enum { R_A1 = 9 };
+#define R_A1 R_A1
+enum { R_A2 = 10 };
+#define R_A2 R_A2
+enum { R_A3 = 11 };
+#define R_A3 R_A3
+enum { R_A4 = 12 };
+#define R_A4 R_A4
+enum { R_A5 = 13 };
+#define R_A5 R_A5
+enum { R_A6 = 14 };
+#define R_A6 R_A6
+enum { R_A7 = 15 };
+#define R_A7 R_A7
+enum { R_SP = 15 };
+#define R_SP R_SP
+enum { R_PC = 16 };
+#define R_PC R_PC
+enum { R_PS = 17 };
+#define R_PS R_PS
+#endif
+
+#if defined(_GNU_SOURCE) || defined(_BSD_SOURCE) || defined(__MLIBC_BUILDING_MLIBC)
+
+struct sigcontext {
+	unsigned long sc_mask, sc_usp, sc_d0, sc_d1, sc_a0, sc_a1;
+	unsigned short sc_sr;
+	unsigned long sc_pc;
+	unsigned short sc_formatvec;
+	unsigned long sc_fpregs[6], sc_fpcntl[3];
+	unsigned char sc_fpstate[216];
+};
+
+typedef int greg_t, gregset_t[18];
+typedef struct {
+	int f_pcr, f_psr, f_fpiaddr, f_fpregs[8][3];
+} fpregset_t;
+
+typedef struct {
+	int version;
+	gregset_t gregs;
+	fpregset_t fpregs;
+} mcontext_t;
+#else
+typedef struct {
+	int __version;
+	int __gregs[18];
+	int __fpregs[27];
+} mcontext_t;
+#endif
+
+struct sigaltstack {
+	void *ss_sp;
+	int ss_flags;
+	size_t ss_size;
+};
+
+typedef struct __ucontext {
+	unsigned long uc_flags;
+	struct __ucontext *uc_link;
+	stack_t uc_stack;
+	mcontext_t uc_mcontext;
+	long __reserved[80];
+	sigset_t uc_sigmask;
+} ucontext_t;
+
+#elif defined(__loongarch64)
+/* Taken from musl. */
+
+#define NGREG 32
+#define REG_RA 1
+#define REG_SP 3
+#define REG_S0 23
+#define REG_S1 24
+#define REG_A0 4
+#define REG_S2 25
+#define REG_NARGS 8
+
+typedef unsigned long greg_t, gregset_t[32];
+
+struct sigcontext {
+	unsigned long sc_pc;
+	unsigned long sc_regs[32];
+	unsigned sc_flags;
+	unsigned long sc_extcontext[1] __attribute__((__aligned__(16)));
+};
+
+typedef struct {
+	unsigned long pc;
+	unsigned long gregs[32];
+	unsigned flags;
+	unsigned long extcontext[1] __attribute__((__aligned__(16)));
+} mcontext_t;
+
+struct sigaltstack {
+	void *ss_sp;
+	int ss_flags;
+	size_t ss_size;
+};
+
+typedef struct __ucontext {
+	unsigned long uc_flags;
+	struct __ucontext *uc_link;
+	stack_t uc_stack;
+	sigset_t uc_sigmask;
+	long __uc_pad;
 	mcontext_t uc_mcontext;
 } ucontext_t;
 

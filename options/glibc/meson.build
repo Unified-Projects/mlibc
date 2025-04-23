@@ -1,4 +1,4 @@
-if disable_glibc_option
+if not glibc_option
 	subdir_done()
 endif
 libc_sources += files(
@@ -18,8 +18,10 @@ libc_sources += files(
 	'generic/sys-timex.cpp',
 	'generic/glibc-assert.cpp',
 	'generic/malloc.cpp',
+	'generic/sys-cachectl.cpp',
 	'generic/sys-io.cpp',
-	'generic/search.cpp'
+	'generic/search.cpp',
+	'generic/stdlib.cpp'
 )
 
 if not no_headers
@@ -41,6 +43,7 @@ if not no_headers
 		'include/features.h'
 	)
 	install_headers(
+		'include/sys/cachectl.h',
 		'include/sys/dir.h',
 		'include/sys/ioctl.h',
 		'include/sys/user.h',
@@ -86,6 +89,7 @@ if not no_headers
 		'include/bits/glibc/glibc_malloc.h',
 		'include/bits/glibc/glibc_icmp6.h',
 		'include/bits/glibc/glibc_search.h',
+		'include/bits/glibc/glibc_stdlib.h',
 		subdir: 'bits/glibc'
 	)
 endif

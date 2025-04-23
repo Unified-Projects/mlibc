@@ -13,6 +13,7 @@
 #define LC_NUMERIC 5
 #define LC_TIME 6
 #define LC_MESSAGES 7
+#define LC_MEASUREMENT 11
 
 #define LC_GLOBAL_LOCALE ((locale_t) -1L)
 
@@ -22,6 +23,7 @@
 #define LC_COLLATE_MASK (1<<LC_COLLATE)
 #define LC_MONETARY_MASK (1<<LC_MONETARY)
 #define LC_MESSAGES_MASK (1<<LC_MESSAGES)
+#define LC_MEASUREMENT_MASK (1<<LC_MEASUREMENT)
 #define LC_ALL_MASK 0x7FFFFFFF
 
 #ifdef __cplusplus

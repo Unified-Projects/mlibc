@@ -6,13 +6,16 @@ rtld_test_cases = [
 	'rtld_next',
 	'soname',
 	'preinit',
-	'destroy',
+	'destroy1',
+	'destroy2',
 	'scope1',
 	'scope2',
 	'scope3',
 	'scope4',
 	'scope5',
 	'tls_align',
+	'relr',
+	'symver',
 ]
 
 host_libc_rtld_nosan_test_cases = [
@@ -20,7 +23,7 @@ host_libc_rtld_nosan_test_cases = [
 ]
 
 foreach test_name : rtld_test_cases
-	test_rpath = meson.build_root() / 'tests' / 'rtld' / test_name / ''
+	test_rpath = meson.global_build_root() / 'tests' / 'rtld' / test_name / ''
 	test_rpath += ':$ORIGIN/' # Workaround old and buggy qemu-user on CI
 
 	test_env = []

@@ -43,6 +43,7 @@ mlibc::RtldConfig rtldConfig;
 bool ldShowAuxv = false;
 
 uintptr_t *entryStack;
+static constinit Tcb earlyTcb{};
 frg::manual_box<ObjectRepository> initialRepository;
 frg::manual_box<Scope> globalScope;
 
@@ -63,7 +64,7 @@ DebugInterface globalDebugInterface;
 
 // Use a PC-relative instruction sequence to find our runtime load address.
 uintptr_t getLdsoBase() {
-#if defined(__x86_64__) || defined(__i386__) || defined(__aarch64__)
+#if defined(__x86_64__) || defined(__i386__) || defined(__aarch64__) || defined(__m68k__) || defined(__loongarch64)
 	// On x86_64, the first GOT entry holds the link-time address of _DYNAMIC.
 	// TODO: This isn't guaranteed on AArch64, so this might fail with some linkers.
 	auto linktime_dynamic = reinterpret_cast<uintptr_t>(_GLOBAL_OFFSET_TABLE_[0]);
@@ -71,9 +72,12 @@ uintptr_t getLdsoBase() {
 	return runtime_dynamic - linktime_dynamic;
 #elif defined(__riscv)
 	return reinterpret_cast<uintptr_t>(&__ehdr_start);
+#else
+	#error Unknown architecture!
 #endif
 }
 
+#if !defined(__m68k__)
 // Relocates the dynamic linker (i.e. this DSO) itself.
 // Assumptions:
 // - There are no references to external symbols.
@@ -99,8 +103,6 @@ extern "C" void relocateSelf() {
 	}
 
 	auto ldso_base = getLdsoBase();
-
-	__ensure((rel_offset != 0) ^ (rela_offset != 0));
 
 	for(size_t disp = 0; disp < rela_size; disp += sizeof(elf_rela)) {
 		auto reloc = reinterpret_cast<elf_rela *>(ldso_base + rela_offset + disp);
@@ -144,8 +146,14 @@ extern "C" void relocateSelf() {
 		if(!(entry & 1)) {
 			addr = (elf_addr *)(ldso_base + entry);
 			__ensure(addr);
+			*addr++ += ldso_base;
 		}else {
 			// Odd entry indicates entry is a bitmap of the subsequent locations to be relocated.
+
+			// The first bit of an entry is always a marker about whether the entry is an address or a bitmap,
+			// discard it.
+			entry >>= 1;
+
 			for(int i = 0; entry; ++i) {
 				if(entry & 1) {
 					addr[i] += ldso_base;
@@ -158,6 +166,38 @@ extern "C" void relocateSelf() {
 		}
 	}
 }
+#else
+// m68k needs a tighter relocation function to avoid itself relying on the GOT.
+extern "C" void relocateSelf68k(elf_dyn *dynamic, uintptr_t ldso_base) {
+	size_t rela_offset = 0;
+	size_t rela_size = 0;
+	for(size_t i = 0; dynamic[i].d_tag != DT_NULL; i++) {
+		auto ent = &dynamic[i];
+		switch(ent->d_tag) {
+		case DT_RELA: rela_offset = ent->d_un.d_ptr; break;
+		case DT_RELASZ: rela_size = ent->d_un.d_val; break;
+		}
+	}
+
+	for(size_t disp = 0; disp < rela_size; disp += sizeof(elf_rela)) {
+		auto reloc = reinterpret_cast<elf_rela *>(ldso_base + rela_offset + disp);
+		auto type = ELF_R_TYPE(reloc->r_info);
+
+		auto p = reinterpret_cast<uintptr_t *>(ldso_base + reloc->r_offset);
+		switch(type) {
+		case R_NONE:
+			break;
+
+		case R_RELATIVE:
+			*p = ldso_base + reloc->r_addend;
+			break;
+		default: {
+			__builtin_trap();
+		}
+		}
+	}
+}
+#endif // !defined(__m68k__)
 #endif
 
 extern "C" void *lazyRelocate(SharedObject *object, unsigned int rel_index) {
@@ -170,10 +210,8 @@ extern "C" void *lazyRelocate(SharedObject *object, unsigned int rel_index) {
 	__ensure(type == R_X86_64_JUMP_SLOT);
 	__ensure(ELF_CLASS == ELFCLASS64);
 
-	auto symbol = (elf_sym *)(object->baseAddress + object->symbolTableOffset
-			+ symbol_index * sizeof(elf_sym));
-	ObjectSymbol r(object, symbol);
-	auto p = Scope::resolveGlobalOrLocal(*globalScope, object->localScope, r.getString(), object->objectRts, 0);
+	auto [sym, ver] = object->getSymbolByIndex(symbol_index);
+	auto p = Scope::resolveGlobalOrLocal(*globalScope, object->localScope, sym.getString(), object->objectRts, 0, ver);
 	if(!p)
 		mlibc::panicLogger() << "Unresolved JUMP_SLOT symbol" << frg::endlog;
 
@@ -238,10 +276,24 @@ static frg::vector<frg::string_view, MemoryAllocator> parseList(frg::string_view
 	return list;
 }
 
+#ifndef MLIBC_STATIC_BUILD
+static constexpr uint64_t supportedDtFlags = DF_BIND_NOW;
+static constexpr uint64_t supportedDtFlags1 = DF_1_NOW;
+#endif
+
 extern "C" void *interpreterMain(uintptr_t *entry_stack) {
 	if(logEntryExit)
 		mlibc::infoLogger() << "Entering ld.so" << frg::endlog;
 	entryStack = entry_stack;
+
+	// Set up an early TCB such that we can cache our own TID.
+	// The TID is needed to use futexes, so this caching saves a lot of syscalls.
+	earlyTcb.selfPointer = &earlyTcb;
+	earlyTcb.tid = mlibc::this_tid();
+	if(mlibc::sys_tcb_set(&earlyTcb))
+		__ensure(!"sys_tcb_set() failed");
+	mlibc::tcb_available_flag = true;
+
 	runtimeTlsMap.initialize();
 	libraryPaths.initialize(getAllocator());
 	preloads.initialize(getAllocator());
@@ -303,9 +355,22 @@ extern "C" void *interpreterMain(uintptr_t *entry_stack) {
 		case DT_RELRSZ:
 		case DT_RELRENT:
 		case DT_PLTGOT:
-		case DT_FLAGS:
-		case DT_FLAGS_1:
+		case DT_BIND_NOW:
 			continue;
+		case DT_FLAGS: {
+			if((ent->d_un.d_val & ~supportedDtFlags) == 0) {
+				continue;
+			}
+			mlibc::panicLogger() << "rtld: unexpected DT_FLAGS value of " << frg::hex_fmt(ent->d_un.d_val) << " in program interpreter" << frg::endlog;
+			break;
+		}
+		case DT_FLAGS_1: {
+			if((ent->d_un.d_val & ~supportedDtFlags1) == 0) {
+				continue;
+			}
+			mlibc::panicLogger() << "rtld: unexpected DT_FLAGS_1 value of " << frg::hex_fmt(ent->d_un.d_val) << " in program interpreter" << frg::endlog;
+			break;
+		}
 		default:
 			mlibc::panicLogger() << "rtld: unexpected dynamic entry " << ent->d_tag << " in program interpreter" << frg::endlog;
 		}
@@ -472,6 +537,12 @@ extern "C" void *interpreterMain(uintptr_t *entry_stack) {
 	// so we have to set the ldso path after loading both.
 	ldso->path = executableSO->interpreterPath;
 
+	// Discover dependencies in a breadth-first search.
+	for (size_t i = 0; i < initialRepository->dependencyQueue.size(); i++) {
+		auto current = initialRepository->dependencyQueue[i];
+		initialRepository->discoverDependenciesFromLoadedObject(current);
+		current->dependenciesDiscovered = true;
+	}
 #else
 	executableSO = initialRepository->injectStaticObject(execfn,
 			frg::string<MemoryAllocator>{ execfn, getAllocator() },
@@ -487,10 +558,9 @@ extern "C" void *interpreterMain(uintptr_t *entry_stack) {
 	mlibc::initStackGuard(stack_entropy);
 
 	auto tcb = allocateTcb();
+	tcb->tid = earlyTcb.tid;
 	if(mlibc::sys_tcb_set(tcb))
 		__ensure(!"sys_tcb_set() failed");
-	tcb->tid = mlibc::this_tid();
-	mlibc::tcb_available_flag = true;
 
 	globalDebugInterface.ver = 1;
 	globalDebugInterface.brk = &dl_debug_state;
@@ -600,7 +670,16 @@ void *__dlapi_open(const char *file, int flags, void *returnAddress) {
 			}
 			return nullptr;
 		}
+
 		object = objectResult.value();
+		initialRepository->discoverDependenciesFromLoadedObject(object);
+		for (size_t i = 0; i < initialRepository->dependencyQueue.size(); i++) {
+			auto current = initialRepository->dependencyQueue[i];
+			if(!current->dependenciesDiscovered) {
+				initialRepository->discoverDependenciesFromLoadedObject(current);
+				current->dependenciesDiscovered = true;
+			}
+		}
 
 		Loader linker{object->localScope, nullptr, false, rts};
 		linker.linkObjects(object);
@@ -613,7 +692,7 @@ void *__dlapi_open(const char *file, int flags, void *returnAddress) {
 }
 
 extern "C" [[ gnu::visibility("default") ]]
-void *__dlapi_resolve(void *handle, const char *string, void *returnAddress) {
+void *__dlapi_resolve(void *handle, const char *string, void *returnAddress, const char *version) {
 	if (logDlCalls) {
 		const char *name;
 		bool quote = false;
@@ -631,9 +710,13 @@ void *__dlapi_resolve(void *handle, const char *string, void *returnAddress) {
 	}
 
 	frg::optional<ObjectSymbol> target;
+	frg::optional<SymbolVersion> targetVersion = frg::null_opt;
+
+	if(version)
+		targetVersion = SymbolVersion{version};
 
 	if (handle == RTLD_DEFAULT) {
-		target = globalScope->resolveSymbol(string, 0, 0);
+		target = globalScope->resolveSymbol(string, 0, 0, targetVersion);
 	} else if (handle == RTLD_NEXT) {
 		SharedObject *origin = initialRepository->findCaller(returnAddress);
 		if (!origin) {
@@ -641,7 +724,7 @@ void *__dlapi_resolve(void *handle, const char *string, void *returnAddress) {
 				<< "(ra = " << returnAddress << ")" << frg::endlog;
 		}
 
-		target = Scope::resolveGlobalOrLocalNext(*globalScope, origin->localScope, string, origin);
+		target = Scope::resolveGlobalOrLocalNext(*globalScope, origin->localScope, string, origin, targetVersion);
 	} else {
 		// POSIX does not unambiguously state how dlsym() is supposed to work; it just
 		// states that "The symbol resolution algorithm used shall be dependency order
@@ -671,7 +754,7 @@ void *__dlapi_resolve(void *handle, const char *string, void *returnAddress) {
 		for(size_t i = 0; i < queue.size(); i++) {
 			auto current = queue[i];
 
-			target = resolveInObject(current, string);
+			target = resolveInObject(current, string, targetVersion);
 			if(target)
 				break;
 
@@ -826,9 +909,8 @@ void __dlapi_enter(uintptr_t *entry_stack) {
 
 extern "C" [[gnu::visibility("default")]] int _dl_find_object(void *address, dl_find_object *result) {
 	for(const SharedObject *object : initialRepository->loadedObjects) {
-		if(object->baseAddress > (uintptr_t)address) {
+		if(object->baseAddress > reinterpret_cast<uintptr_t>(address))
 			continue;
-		}
 
 		if(object->inLinkMap)
 			result->dlfo_link_map = (link_map *)&object->linkMap;
@@ -847,6 +929,9 @@ extern "C" [[gnu::visibility("default")]] int _dl_find_object(void *address, dl_
 			}
 			end_addr = frg::max(end_addr, phdr->p_vaddr + phdr->p_memsz);
 		}
+
+		if(reinterpret_cast<uintptr_t>(address) > object->baseAddress + end_addr)
+			continue;
 
 		result->dlfo_flags = 0;
 		result->dlfo_map_start = (void *)object->baseAddress;

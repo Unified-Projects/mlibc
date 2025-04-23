@@ -55,12 +55,10 @@ int munlockall(void) {
 }
 
 
-int posix_madvise(void *addr, size_t length, int advice) {
-	if(!mlibc::sys_posix_madvise) {
-		MLIBC_MISSING_SYSDEP();
-		return ENOSYS;
-	}
-	return mlibc::sys_posix_madvise(addr, length, advice);
+int posix_madvise(void *, size_t, int) {
+	mlibc::infoLogger() << "\e[31m" "mlibc: posix_madvise() fails unconditionally" "\e[39m"
+			<< frg::endlog;
+	return ENOSYS;
 }
 
 int msync(void *addr, size_t length, int flags) {
@@ -70,23 +68,6 @@ int msync(void *addr, size_t length, int flags) {
 		return -1;
 	}
 	return 0;
-}
-
-void *mremap(void *pointer, size_t size, size_t new_size, int flags, ...) {
-	__ensure(flags == MREMAP_MAYMOVE);
-
-	void *window;
-	MLIBC_CHECK_OR_ENOSYS(mlibc::sys_vm_remap, (void *)-1);
-	if(int e = mlibc::sys_vm_remap(pointer, size, new_size, &window); e) {
-		errno = e;
-		return (void *)-1;
-	}
-	return window;
-}
-
-int remap_file_pages(void *, size_t, int, size_t, int) {
-	__ensure(!"Not implemented");
-	__builtin_unreachable();
 }
 
 void *mmap(void *hint, size_t size, int prot, int flags, int fd, off_t offset) {
@@ -148,6 +129,23 @@ int shm_unlink(const char *name) {
 }
 
 #if __MLIBC_LINUX_OPTION
+void *mremap(void *pointer, size_t size, size_t new_size, int flags, ...) {
+	__ensure(flags == MREMAP_MAYMOVE);
+
+	void *window;
+	MLIBC_CHECK_OR_ENOSYS(mlibc::sys_vm_remap, (void *)-1);
+	if(int e = mlibc::sys_vm_remap(pointer, size, new_size, &window); e) {
+		errno = e;
+		return (void *)-1;
+	}
+	return window;
+}
+
+int remap_file_pages(void *, size_t, int, size_t, int) {
+	__ensure(!"Not implemented");
+	__builtin_unreachable();
+}
+
 int memfd_create(const char *name, unsigned int flags) {
 	int ret = -1;
 

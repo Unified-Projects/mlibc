@@ -30,10 +30,13 @@ all_test_cases = [
 	'ansi/strxfrm',
 	'ansi/calloc',
 	'ansi/fgetpos',
+	'ansi/fputs',
+	'ansi/ftell',
 	'bsd/ns_get_put',
 	'bsd/reallocarray',
 	'bsd/strl',
 	'bsd/sbrk',
+	'bsd/getloadavg',
 	'posix/inet_ntop',
 	'posix/inet_pton',
 	'posix/access',
@@ -57,6 +60,7 @@ all_test_cases = [
 	'posix/getaddrinfo',
 	'posix/getdelim',
 	'posix/getnameinfo',
+	'posix/getparam',
 	'posix/getservbyname',
 	'posix/getservbyport',
 	'posix/grp',
@@ -98,6 +102,8 @@ all_test_cases = [
 	'posix/mkstemp',
 	'posix/waitid',
 	'posix/usershell',
+	'posix/shm',
+	'posix/swab',
 	'glibc/getopt',
 	'glibc/ffsl-ffsll',
 	'glibc/error_message_count',
@@ -107,12 +113,15 @@ all_test_cases = [
 	'glibc/error',
 	'glibc/error_at_line',
 	'glibc/getgrouplist',
+	'glibc/rpmatch',
 	'linux/xattr',
 	'linux/pthread_setname_np',
 	'linux/pthread_attr',
 	'linux/cpuset',
 	'linux/malloc-usable-size',
 	'linux/getifaddrs',
+	'linux/pidfd',
+	'linux/timerfd',
 ]
 
 if host_machine.system() == 'linux'
@@ -146,11 +155,12 @@ extra_cflags_test_cases = {
 }
 
 test_sources = []
+test_objects = []
 test_link_args = []
-test_c_args = ['-D_GNU_SOURCE']
+test_c_args = ['-D_GNU_SOURCE', '-U__MLIBC_DEBUG', '-U__MLIBC_BUILDING_MLIBC', '-fhosted', '-fno-builtin']
 use_pie = false
 
-host_test_c_args = []
+host_test_c_args = ['-fno-builtin']
 
 c_compiler = meson.get_compiler('c')
 
@@ -167,6 +177,39 @@ endif
 test_override_options = ['b_sanitize=none']
 
 if library_type == 'static'
+	c_compiler = meson.get_compiler('c')
+	searchdirs = run_command(c_compiler.cmd_array(), '-print-search-dirs',
+				check: true).stdout()
+	searchdirs_arr = searchdirs.split('\n')
+	searchline = 'libraries: ='
+	searchpaths = ''
+
+	foreach line : searchdirs_arr
+		if line.startswith(searchline)
+			searchpaths = line.strip(searchline)
+			break
+		endif
+	endforeach
+
+	if searchpaths == ''
+		error('could not find compiler-specific library directory')
+	endif
+
+	searchpaths_arr = searchpaths.split(':')
+	crtpath = ''
+	fs = import('fs')
+	foreach path : searchpaths_arr
+		if fs.exists(path / 'crtbegin.o')
+			crtpath = path
+			break
+		endif
+	endforeach
+
+	if crtpath == ''
+		error('could not find crtbegin.o/crtend.o')
+	endif
+	test_objects += [crtpath / 'crtbegin.o', crtpath / 'crtend.o']
+
 	libc_dep = declare_dependency(
 		include_directories: libc_include_dirs,
 		link_with: libc_static,
@@ -175,18 +218,14 @@ if library_type == 'static'
 	use_pie = false
 	test_c_args += '-no-pie'
 	test_link_args += ['-no-pie', '-static']
-	test_sources += [
-		'../options/internal' / host_machine.cpu_family() / 'mlibc_crtbegin.S',
-		'../options/internal' / host_machine.cpu_family() / 'mlibc_crtend.S',
-		crt,
-	]
+	test_sources += crt
 else
 	libc_dep = declare_dependency(
 		include_directories: libc_include_dirs,
 		link_with: libc_shared,
 		dependencies: [libc_deps, rtlib_deps]
 	)
-	test_link_args += ['-Wl,--dynamic-linker=' + meson.build_root() + '/ld.so']
+	test_link_args += ['-Wl,--dynamic-linker=' + meson.global_build_root() + '/ld.so']
 
 	if host_machine.system() in ['linux']
 		use_pie = true
@@ -201,7 +240,7 @@ else
 	endif
 
 	# Add the rtld tests.
-	if not disable_posix_option
+	if posix_option
 		subdir('rtld')
 	endif
 endif
@@ -213,20 +252,21 @@ foreach test_name : all_test_cases
 	test_short_name = test_name.split('/')[1]
 	test_exec_name = test_name.replace('/', '-')
 
-	if test_subdir == 'bsd' and disable_bsd_option
+	if test_subdir == 'bsd' and not bsd_option
 		continue
-	elif test_subdir == 'glibc' and disable_glibc_option
+	elif test_subdir == 'glibc' and not glibc_option
 		continue
-	elif test_subdir == 'posix' and disable_posix_option
+	elif test_subdir == 'posix' and not posix_option
 		continue
-	elif test_subdir == 'linux' and disable_linux_option
+	elif test_subdir == 'linux' and not linux_option
 		continue
 	endif
 
 	should_fail = fail_test_cases.contains(test_name)
 	exec = executable(test_exec_name, [test_name + '.c', test_sources],
 		dependencies: libc_dep,
-		build_rpath: meson.build_root(),
+		objects: test_objects,
+		build_rpath: meson.global_build_root(),
 		override_options: test_override_options,
 		c_args: test_c_args,
 		link_args: test_link_args,
@@ -239,7 +279,7 @@ foreach test_name : all_test_cases
 			suite: test_subdir,
 			should_fail: should_fail,
 			args: [
-				meson.source_root() + '/tests/' + test_name + '.py',
+				meson.global_source_root() + '/tests/' + test_name + '.py',
 				exec
 			],
 			timeout: timeout_sec,
@@ -262,7 +302,7 @@ foreach test_name : all_test_cases
 		endif
 
 		exec = executable('host-libc-' + test_exec_name, test_name + '.c',
-			build_rpath: meson.build_root(),
+			build_rpath: meson.global_build_root(),
 			override_options: host_libc_sanitize_options,
 			c_args: [host_test_c_args + '-D_GNU_SOURCE', '-DUSE_HOST_LIBC', '-pthread', extra_cflags],
 			link_args: ['-lresolv', '-ldl', '-pthread', '-lm', '-lrt'],

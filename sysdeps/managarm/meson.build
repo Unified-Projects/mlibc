@@ -1,3 +1,10 @@
+sysdep_supported_options = {
+	'posix': true,
+	'linux': true,
+	'glibc': true,
+	'bsd': true,
+}
+
 managarm = subproject('managarm', default_options: [ 'provide_deps=true' ])
 hel_dep = managarm.get_variable('hel_dep')
 proto_posix_dep = managarm.get_variable('posix_extra_dep')
@@ -8,10 +15,11 @@ bragi_dep = subproject('bragi', default_options: ['install_headers=false']).get_
 libdrm_dep = subproject('libdrm-headers').get_variable('libdrm_dep')
 
 bragi_gen = generator(bragi, arguments: [
-		'-l', 'frigg',
-		'--protobuf',
 		'@INPUT@',
-		'@OUTPUT@'
+		'-o',
+		'@OUTPUT@',
+		'cpp', '-l', 'frigg',
+		'--protobuf',
 	],
 	output: '@BASENAME@.frigg_bragi.hpp')
 
@@ -63,6 +71,10 @@ elif host_machine.cpu_family() == 'x86_64'
 		'x86_64/thread_entry.S',
 		'x86_64/thread.cpp'
 	)
+elif host_machine.cpu_family() == 'riscv64'
+	libc_sources += files(
+		'riscv64/thread.cpp',
+	)
 else
 	error('Unknown architecture')
 endif
@@ -102,6 +114,7 @@ if not no_headers
 		'include/abi-bits/packet.h',
 		'include/abi-bits/inotify.h',
 		'include/abi-bits/clockid_t.h',
+		'include/abi-bits/ipc.h',
 		'include/abi-bits/shm.h',
 		'include/abi-bits/mqueue.h',
 		'include/abi-bits/suseconds_t.h',
@@ -114,6 +127,10 @@ if not no_headers
 		'include/abi-bits/xattr.h',
 		'include/abi-bits/msg.h',
 		'include/abi-bits/vt.h',
+		'include/abi-bits/random.h',
+		'include/abi-bits/rlim_t.h',
+		'include/abi-bits/sigval.h',
+		'include/abi-bits/sigevent.h',
 		subdir: 'abi-bits',
 		follow_symlinks: true
 	)
@@ -121,7 +138,7 @@ endif
 
 if not headers_only
 	crtstuff = ['crt0']
-	if host_machine.cpu_family() in ['x86_64', 'aarch64']
+	if host_machine.cpu_family() in ['x86_64', 'aarch64', 'riscv64']
 		crtstuff += [
 			'Scrt1',
 			'crti',

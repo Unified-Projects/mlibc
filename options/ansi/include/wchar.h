@@ -7,16 +7,13 @@
 #include <bits/wchar.h>
 #include <bits/wint_t.h>
 #include <bits/mbstate.h>
+#include <bits/file.h>
 
 #define WEOF 0xffffffffU
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-typedef struct __mlibc_file_base FILE;
-
-typedef struct __mlibc_mbstate mbstate_t;
 
 /* MISSING: struct tm */
 
@@ -120,6 +117,7 @@ int wcswidth(const wchar_t *__s, size_t __size);
 wchar_t *wcsdup(const wchar_t *__s);
 int wcsncasecmp(const wchar_t *__a, const wchar_t *__b, size_t __size);
 int wcscasecmp(const wchar_t *__a, const wchar_t *__b);
+size_t wcsnlen(const wchar_t *__s, size_t __maxlen);
 
 #endif /* !__MLIBC_ABI_ONLY */
 

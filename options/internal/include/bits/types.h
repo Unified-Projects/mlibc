@@ -148,6 +148,50 @@ typedef __mlibc_int64 __mlibc_int_fast64;
 #define __MLIBC_INT_FAST64_MAX __MLIBC_INT64_MAX
 #define __MLIBC_INT_FAST64_MIN __MLIBC_INT64_MIN
 
+#elif defined (__m68k__)
+
+typedef __mlibc_int8 __mlibc_int_fast8;
+#define __MLIBC_INT_FAST8_C(x) __MLIBC_INT8_C(x)
+#define __MLIBC_INT_FAST8_MAX __MLIBC_INT8_MAX
+#define __MLIBC_INT_FAST8_MIN __MLIBC_INT8_MIN
+
+typedef __mlibc_int32 __mlibc_int_fast16;
+#define __MLIBC_INT_FAST16_C(x) __MLIBC_INT16_C(x)
+#define __MLIBC_INT_FAST16_MAX __MLIBC_INT16_MAX
+#define __MLIBC_INT_FAST16_MIN __MLIBC_INT16_MIN
+
+typedef __mlibc_int32 __mlibc_int_fast32;
+#define __MLIBC_INT_FAST32_C(x) __MLIBC_INT32_C(x)
+#define __MLIBC_INT_FAST32_MAX __MLIBC_INT32_MAX
+#define __MLIBC_INT_FAST32_MIN __MLIBC_INT32_MIN
+
+typedef __mlibc_int64 __mlibc_int_fast64;
+#define __MLIBC_INT_FAST64_C(x) __MLIBC_INT64_C(x)
+#define __MLIBC_INT_FAST64_MAX __MLIBC_INT64_MAX
+#define __MLIBC_INT_FAST64_MIN __MLIBC_INT64_MIN
+
+#elif defined (__loongarch64)
+
+typedef __mlibc_int8 __mlibc_int_fast8;
+#define __MLIBC_INT_FAST8_C(x) __MLIBC_INT8_C(x)
+#define __MLIBC_INT_FAST8_MAX __MLIBC_INT8_MAX
+#define __MLIBC_INT_FAST8_MIN __MLIBC_INT8_MIN
+
+typedef __mlibc_int64 __mlibc_int_fast16;
+#define __MLIBC_INT_FAST16_C(x) __MLIBC_INT64_C(x)
+#define __MLIBC_INT_FAST16_MAX __MLIBC_INT64_MAX
+#define __MLIBC_INT_FAST16_MIN __MLIBC_INT64_MIN
+
+typedef __mlibc_int64 __mlibc_int_fast32;
+#define __MLIBC_INT_FAST32_C(x) __MLIBC_INT64_C(x)
+#define __MLIBC_INT_FAST32_MAX __MLIBC_INT64_MAX
+#define __MLIBC_INT_FAST32_MIN __MLIBC_INT64_MIN
+
+typedef __mlibc_int64 __mlibc_int_fast64;
+#define __MLIBC_INT_FAST64_C(x) __MLIBC_INT64_C(x)
+#define __MLIBC_INT_FAST64_MAX __MLIBC_INT64_MAX
+#define __MLIBC_INT_FAST64_MIN __MLIBC_INT64_MIN
+
 #else
 #  error "Missing architecture specific code"
 #endif
@@ -242,6 +286,50 @@ typedef __mlibc_uint64 __mlibc_uint_fast64;
 #define __MLIBC_UINT_FAST64_MAX __MLIBC_UINT64_MAX
 #define __MLIBC_UINT_FAST64_MIN __MLIBC_UINT64_MIN
 
+#elif defined (__m68k__)
+
+typedef __mlibc_uint8 __mlibc_uint_fast8;
+#define __MLIBC_UINT_FAST8_C(x) __MLIBC_UINT8_C(x)
+#define __MLIBC_UINT_FAST8_MAX __MLIBC_UINT8_MAX
+#define __MLIBC_UINT_FAST8_MIN __MLIBC_UINT8_MIN
+
+typedef __mlibc_uint32 __mlibc_uint_fast16;
+#define __MLIBC_UINT_FAST16_C(x) __MLIBC_UINT16_C(x)
+#define __MLIBC_UINT_FAST16_MAX __MLIBC_UINT16_MAX
+#define __MLIBC_UINT_FAST16_MIN __MLIBC_UINT16_MIN
+
+typedef __mlibc_uint32 __mlibc_uint_fast32;
+#define __MLIBC_UINT_FAST32_C(x) __MLIBC_UINT32_C(x)
+#define __MLIBC_UINT_FAST32_MAX __MLIBC_UINT32_MAX
+#define __MLIBC_UINT_FAST32_MIN __MLIBC_UINT32_MIN
+
+typedef __mlibc_uint64 __mlibc_uint_fast64;
+#define __MLIBC_UINT_FAST64_C(x) __MLIBC_UINT64_C(x)
+#define __MLIBC_UINT_FAST64_MAX __MLIBC_UINT64_MAX
+#define __MLIBC_UINT_FAST64_MIN __MLIBC_UINT64_MIN
+
+#elif defined (__loongarch64)
+
+typedef __mlibc_uint8 __mlibc_uint_fast8;
+#define __MLIBC_UINT_FAST8_C(x) __MLIBC_UINT8_C(x)
+#define __MLIBC_UINT_FAST8_MAX __MLIBC_UINT8_MAX
+#define __MLIBC_UINT_FAST8_MIN __MLIBC_UINT8_MIN
+
+typedef __mlibc_uint64 __mlibc_uint_fast16;
+#define __MLIBC_UINT_FAST16_C(x) __MLIBC_UINT64_C(x)
+#define __MLIBC_UINT_FAST16_MAX __MLIBC_UINT64_MAX
+#define __MLIBC_UINT_FAST16_MIN __MLIBC_UINT64_MIN
+
+typedef __mlibc_uint64 __mlibc_uint_fast32;
+#define __MLIBC_UINT_FAST32_C(x) __MLIBC_UINT64_C(x)
+#define __MLIBC_UINT_FAST32_MAX __MLIBC_UINT64_MAX
+#define __MLIBC_UINT_FAST32_MIN __MLIBC_UINT64_MIN
+
+typedef __mlibc_uint64 __mlibc_uint_fast64;
+#define __MLIBC_UINT_FAST64_C(x) __MLIBC_UINT64_C(x)
+#define __MLIBC_UINT_FAST64_MAX __MLIBC_UINT64_MAX
+#define __MLIBC_UINT_FAST64_MIN __MLIBC_UINT64_MIN
+
 #else
 #  error "Missing architecture specific code"
 #endif
@@ -280,16 +368,17 @@ typedef __SIZE_TYPE__    __mlibc_size;
 /* Sanity checking. Make sure that we agree with the compiler's ABI. */
 /* ---------------------------------------------------------------------------- */
 
-#if defined(__cpp_static_assert)
+#if defined(__cplusplus) && defined(__cpp_static_assert) && __cpp_static_assert >= 200410L
 #	define __MLIBC_STATIC_ASSERT(c, text) static_assert(c, text)
 #elif !defined(__cplusplus)
-#	define __MLIBC_STATIC_ASSERT(c, text) _Static_assert(c, text)
+/* _Static_assert is an extension in C89/C99. */
+#	define __MLIBC_STATIC_ASSERT(c, text) __extension__ _Static_assert(c, text)
 #else
-#	define __MLIBC_STATIC_ASSERT(c, text)
+#	define __MLIBC_STATIC_ASSERT(c, text) extern int __static_assert_unavailable
 #endif
 
 #define __MLIBC_CHECK_TYPE(T1, T2) __MLIBC_STATIC_ASSERT(sizeof(T1) == sizeof(T2),\
-	#T1 " != " #T2);
+	#T1 " != " #T2)
 
 /* Least-width. */
 __MLIBC_CHECK_TYPE(__mlibc_int8,  __INT_LEAST8_TYPE__);

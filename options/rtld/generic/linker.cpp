@@ -30,6 +30,7 @@ constexpr bool stillSlightlyVerbose = false;
 constexpr bool logBaseAddresses = false;
 constexpr bool logRpath = false;
 constexpr bool logLdPath = false;
+constexpr bool logSymbolVersions = false;
 constexpr bool eagerBinding = true;
 
 #if defined(__x86_64__) || defined(__i386__)
@@ -39,6 +40,12 @@ constexpr inline uintptr_t tlsOffsetFromTp = 0;
 constexpr inline bool tlsAboveTp = true;
 constexpr inline uintptr_t tlsOffsetFromTp = 16;
 #elif defined(__riscv)
+constexpr inline bool tlsAboveTp = true;
+constexpr inline uintptr_t tlsOffsetFromTp = 0;
+#elif defined(__m68k__)
+constexpr inline bool tlsAboveTp = true;
+constexpr inline ptrdiff_t tlsOffsetFromTp = -0x7000;
+#elif defined(__loongarch64)
 constexpr inline bool tlsAboveTp = true;
 constexpr inline uintptr_t tlsOffsetFromTp = 0;
 #else
@@ -104,6 +111,7 @@ uintptr_t alignUp(uintptr_t address, size_t align) {
 
 ObjectRepository::ObjectRepository()
 : loadedObjects{getAllocator()},
+	dependencyQueue{getAllocator()},
 	_nameMap{frg::hash<frg::string_view>{}, getAllocator()},
 	_destructQueue{getAllocator()} {}
 
@@ -117,9 +125,11 @@ SharedObject *ObjectRepository::injectObjectFromDts(frg::string_view name,
 	object->baseAddress = base_address;
 	object->dynamic = dynamic;
 	_parseDynamic(object);
+	_parseVerdef(object);
 
+	object->wasVisited = true;
+	dependencyQueue.push_back(object);
 	_addLoadedObject(object);
-	_discoverDependencies(object, globalScope.get(), rts);
 
 	return object;
 }
@@ -134,9 +144,11 @@ SharedObject *ObjectRepository::injectObjectFromPhdrs(frg::string_view name,
 		name.data(), std::move(path), true, globalScope.get(), rts);
 	_fetchFromPhdrs(object, phdr_pointer, phdr_entry_size, num_phdrs, entry_pointer);
 	_parseDynamic(object);
+	_parseVerdef(object);
 
+	object->wasVisited = true;
+	dependencyQueue.push_back(object);
 	_addLoadedObject(object);
-	_discoverDependencies(object, globalScope.get(), rts);
 
 	return object;
 }
@@ -276,9 +288,8 @@ frg::expected<LinkerError, SharedObject *> ObjectRepository::requestObjectWithNa
 	}
 
 	_parseDynamic(object);
-
+	_parseVerdef(object);
 	_addLoadedObject(object);
-	_discoverDependencies(object, localScope, rts);
 
 	return object;
 }
@@ -321,11 +332,15 @@ frg::expected<LinkerError, SharedObject *> ObjectRepository::requestObjectAtPath
 	}
 
 	_parseDynamic(object);
-
+	_parseVerdef(object);
 	_addLoadedObject(object);
-	_discoverDependencies(object, localScope, rts);
 
 	return object;
+}
+
+void ObjectRepository::discoverDependenciesFromLoadedObject(SharedObject *object) {
+	_discoverDependencies(object, object->localScope, object->objectRts);
+	_parseVerneed(object);
 }
 
 SharedObject *ObjectRepository::findCaller(void *addr) {
@@ -363,16 +378,17 @@ SharedObject *ObjectRepository::findLoadedObject(frg::string_view name) {
 }
 
 void ObjectRepository::addObjectToDestructQueue(SharedObject *object) {
-	_destructQueue.push_back(object);
+	_destructQueue.push(object);
 }
 
 void doDestruct(SharedObject *object);
 
 void ObjectRepository::destructObjects() {
-	for (size_t i = _destructQueue.size(); i > 0; i--) {
-		doDestruct(_destructQueue[i - 1]);
+	while (_destructQueue.size() > 0) {
+		auto top = _destructQueue.top();
+		doDestruct(top);
+		_destructQueue.pop();
 	}
-	_destructQueue.clear();
 }
 
 // --------------------------------------------------------
@@ -533,6 +549,7 @@ frg::expected<LinkerError, void> ObjectRepository::_fetchFromFile(SharedObject *
 			auto map_address = object->baseAddress + phdr->p_vaddr - misalign;
 			auto backed_map_size = (phdr->p_filesz + misalign + pageSize - 1) & ~(pageSize - 1);
 			auto total_map_size = (phdr->p_memsz + misalign + pageSize - 1) & ~(pageSize - 1);
+			auto initial_prot = PROT_READ | PROT_WRITE;
 
 			int prot = 0;
 			if(phdr->p_flags & PF_R)
@@ -542,45 +559,52 @@ frg::expected<LinkerError, void> ObjectRepository::_fetchFromFile(SharedObject *
 			if(phdr->p_flags & PF_X)
 				prot |= PROT_EXEC;
 
-			#if MLIBC_MAP_DSO_SEGMENTS
-				void *map_pointer;
-				if(mlibc::sys_vm_map(reinterpret_cast<void *>(map_address),
-						backed_map_size, prot | PROT_WRITE,
-						MAP_PRIVATE | MAP_FIXED, fd, phdr->p_offset - misalign, &map_pointer))
-					__ensure(!"sys_vm_map failed");
-				if(total_map_size > backed_map_size)
-					if(mlibc::sys_vm_map(reinterpret_cast<void *>(map_address + backed_map_size),
-							total_map_size - backed_map_size, prot | PROT_WRITE,
-							MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0, &map_pointer))
-						__ensure(!"sys_vm_map failed");
+		#if MLIBC_MAP_DSO_SEGMENTS
+			// we can avoid the vm_protect call if we don't have to write to the segment
+			if(phdr->p_memsz == phdr->p_filesz)
+				initial_prot = prot;
 
-				if(mlibc::sys_vm_readahead)
-					if(mlibc::sys_vm_readahead(reinterpret_cast<void *>(map_address),
-							backed_map_size))
-						mlibc::infoLogger() << "mlibc: sys_vm_readahead() failed in ld.so"
-								<< frg::endlog;
-
-				// Clear the trailing area at the end of the backed mapping.
-				// We do not clear the leading area; programs are not supposed to access it.
-				memset(reinterpret_cast<void *>(map_address + misalign + phdr->p_filesz),
-						0, phdr->p_memsz - phdr->p_filesz);
-			#else
-				(void)backed_map_size;
-
-				void *map_pointer;
-				if(mlibc::sys_vm_map(reinterpret_cast<void *>(map_address),
-						total_map_size, prot | PROT_WRITE,
+			void *map_pointer;
+			if(mlibc::sys_vm_map(reinterpret_cast<void *>(map_address),
+					backed_map_size, initial_prot,
+					MAP_PRIVATE | MAP_FIXED, fd, phdr->p_offset - misalign, &map_pointer))
+				__ensure(!"sys_vm_map failed");
+			if(total_map_size > backed_map_size)
+				if(mlibc::sys_vm_map(reinterpret_cast<void *>(map_address + backed_map_size),
+						total_map_size - backed_map_size, initial_prot,
 						MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0, &map_pointer))
 					__ensure(!"sys_vm_map failed");
 
-				__ensure(trySeek(fd, phdr->p_offset));
-				__ensure(tryReadExactly(fd, reinterpret_cast<char *>(map_address) + misalign,
-						phdr->p_filesz));
-			#endif
-			// Take care of removing superfluous permissions.
-			if(mlibc::sys_vm_protect && ((prot & PROT_WRITE) == 0))
-				if(mlibc::sys_vm_protect(map_pointer, total_map_size, prot))
-					mlibc::infoLogger() << "mlibc: sys_vm_protect() failed in ld.so" << frg::endlog;
+			if(mlibc::sys_vm_readahead)
+				if(mlibc::sys_vm_readahead(reinterpret_cast<void *>(map_address),
+						backed_map_size))
+					mlibc::infoLogger() << "mlibc: sys_vm_readahead() failed in ld.so"
+							<< frg::endlog;
+
+			// Clear the trailing area at the end of the backed mapping.
+			// We do not clear the leading area; programs are not supposed to access it.
+			memset(reinterpret_cast<void *>(map_address + misalign + phdr->p_filesz),
+					0, phdr->p_memsz - phdr->p_filesz);
+		#else
+			(void)backed_map_size;
+
+			void *map_pointer;
+			if(mlibc::sys_vm_map(reinterpret_cast<void *>(map_address),
+					total_map_size, initial_prot,
+					MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0, &map_pointer))
+				__ensure(!"sys_vm_map failed");
+
+			__ensure(trySeek(fd, phdr->p_offset));
+			__ensure(tryReadExactly(fd, reinterpret_cast<char *>(map_address) + misalign,
+					phdr->p_filesz));
+		#endif
+			if(initial_prot != prot) {
+				if (!mlibc::sys_vm_protect)
+					__ensure(!"sys_vm_protect not provided");
+
+				if (mlibc::sys_vm_protect(reinterpret_cast<void *>(map_address), total_map_size, prot))
+					__ensure(!"sys_vm_protect failed");
+			}
 		}else if(phdr->p_type == PT_TLS) {
 			object->tlsSegmentSize = phdr->p_memsz;
 			object->tlsAlignment = phdr->p_align;
@@ -758,14 +782,27 @@ void ObjectRepository::_parseDynamic(SharedObject *object) {
 		case DT_SONAME:
 			soname_offset = dynamic->d_un.d_val;
 			break;
+		// handle version information
+		case DT_VERSYM:
+			object->versionTableOffset = dynamic->d_un.d_ptr;
+			break;
+		case DT_VERDEF:
+			object->versionDefinitionTableOffset = dynamic->d_un.d_ptr;
+			break;
+		case DT_VERDEFNUM:
+			object->versionDefinitionCount = dynamic->d_un.d_val;
+			break;
+		case DT_VERNEED:
+			object->versionRequirementTableOffset = dynamic->d_un.d_ptr;
+			break;
+		case DT_VERNEEDNUM:
+			object->versionRequirementCount = dynamic->d_un.d_val;
+			break;
 		// ignore unimportant tags
 		case DT_NEEDED: // we handle this later
 		case DT_RELA: case DT_RELASZ: case DT_RELAENT: case DT_RELACOUNT:
 		case DT_REL: case DT_RELSZ: case DT_RELENT: case DT_RELCOUNT:
 		case DT_RELR: case DT_RELRSZ: case DT_RELRENT:
-		case DT_VERSYM:
-		case DT_VERDEF: case DT_VERDEFNUM:
-		case DT_VERNEED: case DT_VERNEEDNUM:
 #ifdef __riscv
 		case DT_TEXTREL: // Work around https://sourceware.org/bugzilla/show_bug.cgi?id=24673.
 #endif
@@ -791,6 +828,163 @@ void ObjectRepository::_parseDynamic(SharedObject *object) {
 	}
 }
 
+void ObjectRepository::_parseVerdef(SharedObject *object) {
+	if(!object->versionDefinitionTableOffset) {
+		if(verbose)
+			mlibc::infoLogger()
+				<< "mlibc: Object " << object->name
+				<< " defines no versions" << frg::endlog;
+		return;
+	}
+
+	if(verbose)
+		mlibc::infoLogger()
+			<< "mlibc: Object " << object->name
+			<< " defines " << object->versionDefinitionCount
+			<< " version(s)" << frg::endlog;
+
+	uintptr_t address =
+		object->baseAddress
+		+ object->versionDefinitionTableOffset;
+
+	for(size_t i = 0; i < object->versionDefinitionCount; i++) {
+		elf_verdef def;
+		memcpy(&def, reinterpret_cast<void *>(address), sizeof(elf_verdef));
+
+		// Required by spec.
+		__ensure(def.vd_version == 1);
+		__ensure(def.vd_cnt >= 1);
+		__ensure(!(def.vd_flags & ~(VER_FLG_BASE | VER_FLG_WEAK)));
+
+		// NOTE(qookie): glibc also ignores any additional Verdaux entries after the
+		// first one.
+		elf_verdaux aux;
+		memcpy(&aux, reinterpret_cast<void *>(address + def.vd_aux), sizeof(elf_verdaux));
+
+		const char *name =
+			reinterpret_cast<const char *>(
+				object->baseAddress
+				+ object->stringTableOffset + aux.vda_name);
+
+		if(verbose)
+			mlibc::infoLogger()
+				<< "mlibc: Object " << object->name
+				<< " defines version " << name
+				<< " (index " << def.vd_ndx << ")"
+				<< frg::endlog;
+
+		if(!(def.vd_flags & VER_FLG_BASE)) {
+			SymbolVersion ver{name, def.vd_hash};
+			object->definedVersions.push(ver);
+			object->knownVersions.insert(def.vd_ndx, ver);
+		}
+
+		address += def.vd_next;
+	}
+}
+
+void ObjectRepository::_parseVerneed(SharedObject *object) {
+	if(!object->versionRequirementTableOffset) {
+		if(verbose)
+			mlibc::infoLogger() << "mlibc: Object " << object->name << " requires no versions" << frg::endlog;
+		return;
+	}
+
+	if(verbose)
+		mlibc::infoLogger()
+			<< "mlibc: Object " << object->name
+			<< " requires " << object->versionRequirementCount
+			<< " version(s)" << frg::endlog;
+
+	uintptr_t address =
+		object->baseAddress
+		+ object->versionRequirementTableOffset;
+
+	for(size_t i = 0; i < object->versionRequirementCount; i++) {
+		elf_verneed need;
+		memcpy(&need, reinterpret_cast<void *>(address), sizeof(elf_verneed));
+
+		// Required by spec.
+		__ensure(need.vn_version == 1);
+
+		frg::string_view file =
+			reinterpret_cast<const char *>(
+				object->baseAddress
+				+ object->stringTableOffset + need.vn_file);
+
+		// Figure out the target object from file
+		SharedObject *target = nullptr;
+		for(auto dep : object->dependencies) {
+			if(verbose)
+				mlibc::infoLogger()
+					<< "mlibc: Trying " << dep->name << " (SONAME: "
+					<< dep->soName << ") to satisfy " << file << frg::endlog;
+			if(dep->name == file || (dep->soName && dep->soName == file)) {
+				target = dep;
+				break;
+			}
+		}
+		if(!target)
+			mlibc::panicLogger()
+				<< "mlibc: No object named \""
+				<< file
+				<< "\" found for VERNEED entry of object "
+				<< object->name << frg::endlog;
+
+		if(verbose)
+			mlibc::infoLogger()
+				<< "mlibc: Object " << object->name
+				<< " requires " << need.vn_cnt
+				<< " version(s) from DSO "
+				<< file << frg::endlog;
+
+		uintptr_t auxAddr = address + need.vn_aux;
+		for(size_t j = 0; j < need.vn_cnt; j++) {
+			elf_vernaux aux;
+			memcpy(&aux, reinterpret_cast<void *>(auxAddr), sizeof(elf_vernaux));
+
+			// TODO(qookie): Handle weak versions.
+			__ensure(!aux.vna_flags);
+
+			const char *name =
+				reinterpret_cast<const char *>(
+					object->baseAddress
+					+ object->stringTableOffset + aux.vna_name);
+
+			if(verbose)
+				mlibc::infoLogger()
+					<< "mlibc:   Object " << object->name
+					<< " requires version " << name
+					<< " (index " << aux.vna_other
+					<< ") from DSO " << file
+					<< frg::endlog;
+
+			frg::optional<SymbolVersion> ver;
+			for(auto &def : target->definedVersions) {
+				if(def.hash() != aux.vna_hash) continue;
+				if(def.name() == name) {
+					ver = def;
+					break;
+				}
+			}
+
+			if(!ver)
+				mlibc::panicLogger()
+					<< "mlibc: Object " << target->name
+					<< " does not define version \""
+					<< name << "\" needed by object "
+					<< object->name << frg::endlog;
+
+			bool isDefault = !(aux.vna_other & 0x8000);
+			// Bit 15 indicates whether the static linker should ignore this version.
+			object->knownVersions.insert(aux.vna_other & 0x7FFF, isDefault ? ver->makeDefault() : *ver);
+
+			auxAddr += aux.vna_next;
+		}
+		address += need.vn_next;
+	}
+}
+
 void ObjectRepository::_discoverDependencies(SharedObject *object,
 		Scope *localScope, uint64_t rts) {
 	if(object->isMainObject) {
@@ -807,7 +1001,12 @@ void ObjectRepository::_discoverDependencies(SharedObject *object,
 			if(verbose)
 				mlibc::infoLogger() << "rtld: Preloading " << preload << frg::endlog;
 
-			object->dependencies.push_back(libraryResult.value());
+			auto library = libraryResult.value();
+			object->dependencies.push_back(library);
+			if (library->wasVisited)
+				continue;
+			library->wasVisited = true;
+			dependencyQueue.push_back(library);
 		}
 	}
 
@@ -820,11 +1019,17 @@ void ObjectRepository::_discoverDependencies(SharedObject *object,
 		const char *library_str = (const char *)(object->baseAddress
 				+ object->stringTableOffset + dynamic->d_un.d_val);
 
-		auto library = requestObjectWithName(frg::string_view{library_str},
+		auto libraryResult = requestObjectWithName(frg::string_view{library_str},
 				object, localScope, false, rts);
-		if(!library)
+		if(!libraryResult)
 			mlibc::panicLogger() << "Could not satisfy dependency " << library_str << frg::endlog;
-		object->dependencies.push(library.value());
+
+		auto library = libraryResult.value();
+		object->dependencies.push(library);
+		if (library->wasVisited)
+			continue;
+		library->wasVisited = true;
+		dependencyQueue.push_back(library);
 	}
 }
 
@@ -846,7 +1051,9 @@ SharedObject::SharedObject(const char *name, frg::string<MemoryAllocator> path,
 		globalOffsetTable(nullptr), entry(nullptr), tlsSegmentSize(0),
 		tlsAlignment(0), tlsImageSize(0), tlsImagePtr(nullptr),
 		tlsInitialized(false), hashTableOffset(0), symbolTableOffset(0),
-		stringTableOffset(0), lazyRelocTableOffset(0), lazyTableSize(0),
+		stringTableOffset(0),
+		knownVersions({}, getAllocator()), definedVersions(getAllocator()),
+		lazyRelocTableOffset(0), lazyTableSize(0),
 		lazyExplicitAddend(false), symbolicResolution(false),
 		eagerBinding(false), haveStaticTls(false),
 		dependencies(getAllocator()), tlsModel(TlsModel::null),
@@ -860,16 +1067,73 @@ SharedObject::SharedObject(const char *name, const char *path,
 			frg::string<MemoryAllocator> { path, getAllocator() },
 			is_main_object, localScope, object_rts) {}
 
+frg::tuple<ObjectSymbol, SymbolVersion> SharedObject::getSymbolByIndex(size_t index) {
+	SymbolVersion ver{1}; // If we don't have any version information, treat all symbols as global.
+	ObjectSymbol sym{
+		this,
+		reinterpret_cast<elf_sym *>(
+			baseAddress
+			+ symbolTableOffset
+			+ index * sizeof(elf_sym))};
+
+	if(versionTableOffset) {
+		// Pull out the VERSYM entry for this symbol
+		elf_version verIdx;
+		memcpy(
+			&verIdx,
+			reinterpret_cast<void *>(
+				baseAddress
+				+ versionTableOffset
+				+ index * sizeof(elf_version)),
+			sizeof(elf_version)
+		);
+
+		// Bit 15 indicates that this version is not the default one.
+		bool isDefault = !(verIdx & 0x8000);
+		verIdx &= 0x7FFF;
+
+		// 0 and 1 are special, 0 is local, 1 is global (not in VERDEF/VERNEED)
+		if(verIdx != 0 && verIdx != 1) {
+			auto maybeVer = knownVersions.find(verIdx);
+			if(maybeVer == knownVersions.end())
+				mlibc::panicLogger()
+					<< "mlibc: Symbol " << sym.getString()
+					<< " of object " << name
+					<< " has invalid version index " << verIdx
+					<< frg::endlog;
+
+			ver = maybeVer->get<1>();
+		} else {
+			ver = SymbolVersion{verIdx};
+		}
+
+		if(isDefault)
+			ver = ver.makeDefault();
+
+		if(logSymbolVersions)
+			mlibc::infoLogger()
+				<< "mlibc: Symbol " << sym.getString()
+				<< " of object " << name
+				<< " has version " << ver.name()
+				<< " and " << (ver.isDefault() ? "is" : "isn't")
+				<< " the default version"
+				<< frg::endlog;
+	} else {
+		// If we have no version information, the only symbol we've got is the default.
+		ver = ver.makeDefault();
+	}
+
+	return {sym, ver};
+}
+
 void processLateRelocation(Relocation rel) {
 	// resolve the symbol if there is a symbol
 	frg::optional<ObjectSymbol> p;
 	if(rel.symbol_index()) {
-		auto symbol = (elf_sym *)(rel.object()->baseAddress + rel.object()->symbolTableOffset
-				+ rel.symbol_index() * sizeof(elf_sym));
-		ObjectSymbol r(rel.object(), symbol);
+		auto [sym, ver] = rel.object()->getSymbolByIndex(rel.symbol_index());
 
 		p = Scope::resolveGlobalOrLocal(*globalScope, rel.object()->localScope,
-				r.getString(), rel.object()->objectRts, Scope::resolveCopy);
+				sym.getString(), rel.object()->objectRts, Scope::resolveCopy, ver);
 	}
 
 	switch(rel.type()) {
@@ -953,23 +1217,6 @@ void doInitialize(SharedObject *object) {
 	__ensure(object->wasLinked);
 	__ensure(!object->wasInitialized);
 
-	// If the object has dependencies we initialize them first
-	// except in the case of a circular dependency.
-	for(auto dep : object->dependencies) {
-		bool circular = false;
-		for(auto dep2 : dep->dependencies) {
-			if(dep2 == object) {
-				circular = true;
-				break;
-			}
-		}
-
-		if(circular)
-			continue;
-
-		__ensure(dep->wasInitialized);
-	}
-
 	if(verbose)
 		mlibc::infoLogger() << "rtld: Initialize " << object->name << frg::endlog;
 
@@ -992,23 +1239,6 @@ void doInitialize(SharedObject *object) {
 void doDestruct(SharedObject *object) {
 	if(!object->wasInitialized || object->wasDestroyed)
 		return;
-
-	// If the object has dependencies they are destroyed after this object
-	// except in the case of a circular dependency.
-	for(auto dep : object->dependencies) {
-		bool circular = false;
-		for(auto dep2 : dep->dependencies) {
-			if(dep2 == object) {
-				circular = true;
-				break;
-			}
-		}
-
-		if(circular)
-			continue;
-
-		__ensure(!dep->wasDestroyed);
-	}
 
 	if(verbose)
 		mlibc::infoLogger() << "rtld: Destruct " << object->name << frg::endlog;
@@ -1222,7 +1452,8 @@ uint32_t gnuHash(frg::string_view string) {
 }
 
 // TODO: move this to some namespace or class?
-frg::optional<ObjectSymbol> resolveInObject(SharedObject *object, frg::string_view string) {
+frg::optional<ObjectSymbol> resolveInObject(SharedObject *object, frg::string_view string,
+		frg::optional<SymbolVersion> version) {
 	// Checks if the symbol can be used to satisfy the dependency.
 	auto eligible = [&] (ObjectSymbol cand) {
 		if(cand.symbol()->st_shndx == SHN_UNDEF)
@@ -1235,6 +1466,21 @@ frg::optional<ObjectSymbol> resolveInObject(SharedObject *object, frg::string_vi
 		return true;
 	};
 
+	// Checks if the symbol's version matches the desired version.
+	auto correctVersion = [&] (SymbolVersion candVersion) {
+		// TODO(qookie): Not sure if local symbols should participate in dynamic symbol resolution
+		if(!version && (candVersion.isDefault() || candVersion.isLocal() || candVersion.isGlobal()))
+			return true;
+		// Caller requested default version, but this isn't it.
+		if(!version)
+			return false;
+		// If the requested version is global (caller has VERNEED but not for this symbol),
+		// use the default one.
+		if(version->isGlobal() && !candVersion.isGlobal() && !candVersion.isLocal() && candVersion.isDefault())
+			return true;
+		return *version == candVersion;
+	};
+
 	if (object->hashStyle == HashStyle::systemV) {
 		auto hash_table = (Elf64_Word *)(object->baseAddress + object->hashTableOffset);
 		Elf64_Word num_buckets = hash_table[0];
@@ -1242,9 +1488,8 @@ frg::optional<ObjectSymbol> resolveInObject(SharedObject *object, frg::string_vi
 
 		auto index = hash_table[2 + bucket];
 		while(index != 0) {
-			ObjectSymbol cand{object, (elf_sym *)(object->baseAddress
-					+ object->symbolTableOffset + index * sizeof(elf_sym))};
-			if(eligible(cand) && frg::string_view{cand.getString()} == string)
+			auto [cand, ver] = object->getSymbolByIndex(index);
+			if(eligible(cand) && frg::string_view{cand.getString()} == string && correctVersion(ver))
 				return cand;
 
 			index = hash_table[2 + num_buckets + index];
@@ -1284,9 +1529,8 @@ frg::optional<ObjectSymbol> resolveInObject(SharedObject *object, frg::string_vi
 			// chains[] contains an array of hashes, parallel to the symbol table.
 			auto chash = chains[index - hash_table->symbolOffset];
 			if ((chash & ~1) == (hash & ~1)) {
-				ObjectSymbol cand{object, (elf_sym *)(object->baseAddress
-						+ object->symbolTableOffset + index * sizeof(elf_sym))};
-				if(eligible(cand) && frg::string_view{cand.getString()} == string)
+				auto [cand, ver] = object->getSymbolByIndex(index);
+				if(eligible(cand) && frg::string_view{cand.getString()} == string && correctVersion(ver))
 					return cand;
 			}
 
@@ -1299,7 +1543,7 @@ frg::optional<ObjectSymbol> resolveInObject(SharedObject *object, frg::string_vi
 }
 
 frg::optional<ObjectSymbol> Scope::_resolveNext(frg::string_view string,
-		SharedObject *target) {
+		SharedObject *target, frg::optional<SymbolVersion> version) {
 	// Skip objects until we find the target, and only look for symbols after that.
 	size_t i;
 	for (i = 0; i < _objects.size(); i++) {
@@ -1316,7 +1560,7 @@ frg::optional<ObjectSymbol> Scope::_resolveNext(frg::string_view string,
 		if(_objects[i]->isMainObject)
 			continue;
 
-		frg::optional<ObjectSymbol> p = resolveInObject(_objects[i], string);
+		frg::optional<ObjectSymbol> p = resolveInObject(_objects[i], string, version);
 		if(p)
 			return p;
 	}
@@ -1338,25 +1582,28 @@ void Scope::appendObject(SharedObject *object) {
 }
 
 frg::optional<ObjectSymbol> Scope::resolveGlobalOrLocal(Scope &globalScope,
-		Scope *localScope, frg::string_view string, uint64_t skipRts, ResolveFlags flags) {
-	auto sym = globalScope.resolveSymbol(string, skipRts, flags | skipGlobalAfterRts);
+		Scope *localScope, frg::string_view string, uint64_t skipRts, ResolveFlags flags,
+		frg::optional<SymbolVersion> version) {
+	auto sym = globalScope.resolveSymbol(string, skipRts, flags | skipGlobalAfterRts, version);
 	if(!sym && localScope)
-		sym = localScope->resolveSymbol(string, skipRts, flags | skipGlobalAfterRts);
+		sym = localScope->resolveSymbol(string, skipRts, flags | skipGlobalAfterRts, version);
 	return sym;
 }
 
 frg::optional<ObjectSymbol> Scope::resolveGlobalOrLocalNext(Scope &globalScope,
-		Scope *localScope, frg::string_view string, SharedObject *origin) {
-	auto sym = globalScope._resolveNext(string, origin);
+		Scope *localScope, frg::string_view string, SharedObject *origin,
+		frg::optional<SymbolVersion> version) {
+	auto sym = globalScope._resolveNext(string, origin, version);
 	if(!sym && localScope) {
-		sym = localScope->_resolveNext(string, origin);
+		sym = localScope->_resolveNext(string, origin, version);
 	}
 	return sym;
 }
 
 // TODO: let this return uintptr_t
 frg::optional<ObjectSymbol> Scope::resolveSymbol(frg::string_view string,
-		uint64_t skipRts, ResolveFlags flags) {
+		uint64_t skipRts, ResolveFlags flags,
+		frg::optional<SymbolVersion> version) {
 	for (auto object : _objects) {
 		if((flags & resolveCopy) && object->isMainObject)
 			continue;
@@ -1370,7 +1617,7 @@ frg::optional<ObjectSymbol> Scope::resolveSymbol(frg::string_view string,
 				continue;
 		}
 
-		frg::optional<ObjectSymbol> p = resolveInObject(object, string);
+		frg::optional<ObjectSymbol> p = resolveInObject(object, string, version);
 		if(p)
 			return p;
 	}
@@ -1637,20 +1884,18 @@ void Loader::_processRelocations(Relocation &rel) {
 	// resolve the symbol if there is a symbol
 	frg::optional<ObjectSymbol> p;
 	if(rel.symbol_index()) {
-		auto symbol = (elf_sym *)(rel.object()->baseAddress + rel.object()->symbolTableOffset
-				+ rel.symbol_index() * sizeof(elf_sym));
-		ObjectSymbol r(rel.object(), symbol);
+		auto [sym, ver] = rel.object()->getSymbolByIndex(rel.symbol_index());
 
 		p = Scope::resolveGlobalOrLocal(*globalScope, rel.object()->localScope,
-				r.getString(), rel.object()->objectRts, 0);
+				sym.getString(), rel.object()->objectRts, 0, ver);
 		if(!p) {
-			if(ELF_ST_BIND(symbol->st_info) != STB_WEAK)
+			if(ELF_ST_BIND(sym.symbol()->st_info) != STB_WEAK)
 				mlibc::panicLogger() << "Unresolved load-time symbol "
-						<< r.getString() << " in object " << rel.object()->name << frg::endlog;
+						<< sym.getString() << " in object " << rel.object()->name << frg::endlog;
 
 			if(verbose)
 				mlibc::infoLogger() << "rtld: Unresolved weak load-time symbol "
-						<< r.getString() << " in object " << rel.object()->name << frg::endlog;
+						<< sym.getString() << " in object " << rel.object()->name << frg::endlog;
 		}
 	}
 
@@ -1664,7 +1909,7 @@ void Loader::_processRelocations(Relocation &rel) {
 		rel.relocate(symbol_addr);
 	} break;
 
-#if !defined(__riscv)
+#if !defined(__riscv) && !defined(__loongarch64)
 	// on some architectures, R_GLOB_DAT can be defined to other relocations
 	case R_GLOB_DAT: {
 		__ensure(rel.symbol_index());
@@ -1812,8 +2057,14 @@ void Loader::_processStaticRelocations(SharedObject *object) {
 			if(!(entry & 1)) {
 				addr = (elf_addr *)(object->baseAddress + entry);
 				__ensure(addr);
+				*addr++ += object->baseAddress;
 			}else {
 				// Odd entry indicates entry is a bitmap of the subsequent locations to be relocated.
+
+				// The first bit of an entry is always a marker about whether the entry is an address or a bitmap,
+				// discard it.
+				entry >>= 1;
+
 				for(int i = 0; entry; ++i) {
 					if(entry & 1) {
 						addr[i] += object->baseAddress;
@@ -1872,19 +2123,17 @@ void Loader::_processLazyRelocations(SharedObject *object) {
 		switch (type) {
 		case R_JUMP_SLOT:
 			if(eagerBinding) {
-				auto symbol = (elf_sym *)(object->baseAddress + object->symbolTableOffset
-						+ symbol_index * sizeof(elf_sym));
-				ObjectSymbol r(object, symbol);
-				auto p = Scope::resolveGlobalOrLocal(*globalScope, object->localScope, r.getString(), object->objectRts, 0);
+				auto [sym, ver] = object->getSymbolByIndex(symbol_index);
+				auto p = Scope::resolveGlobalOrLocal(*globalScope, object->localScope, sym.getString(), object->objectRts, 0, ver);
 
 				if(!p) {
-					if(ELF_ST_BIND(symbol->st_info) != STB_WEAK)
+					if(ELF_ST_BIND(sym.symbol()->st_info) != STB_WEAK)
 						mlibc::panicLogger() << "rtld: Unresolved JUMP_SLOT symbol "
-								<< r.getString() << " in object " << object->name << frg::endlog;
+								<< sym.getString() << " in object " << object->name << frg::endlog;
 
 					if(verbose)
 						mlibc::infoLogger() << "rtld: Unresolved weak JUMP_SLOT symbol "
-							<< r.getString() << " in object " << object->name << frg::endlog;
+							<< sym.getString() << " in object " << object->name << frg::endlog;
 					*((uintptr_t *)rel_addr) = 0;
 				}else{
 					*((uintptr_t *)rel_addr) = p->virtualAddress();
@@ -1908,15 +2157,13 @@ void Loader::_processLazyRelocations(SharedObject *object) {
 			SharedObject *target = nullptr;
 
 			if (symbol_index) {
-				auto symbol = (elf_sym *)(object->baseAddress + object->symbolTableOffset
-						+ symbol_index * sizeof(elf_sym));
-				ObjectSymbol r(object, symbol);
-				auto p = Scope::resolveGlobalOrLocal(*globalScope, object->localScope, r.getString(), object->objectRts, 0);
+				auto [sym, ver] = object->getSymbolByIndex(symbol_index);
+				auto p = Scope::resolveGlobalOrLocal(*globalScope, object->localScope, sym.getString(), object->objectRts, 0, ver);
 
 				if (!p) {
-					__ensure(ELF_ST_BIND(symbol->st_info) != STB_WEAK);
+					__ensure(ELF_ST_BIND(sym.symbol()->st_info) != STB_WEAK);
 					mlibc::panicLogger() << "rtld: Unresolved TLSDESC for symbol "
-						<< r.getString() << " in object " << object->name << frg::endlog;
+						<< sym.getString() << " in object " << object->name << frg::endlog;
 				} else {
 					target = p->object();
 					if (p->symbol())

@@ -112,12 +112,28 @@ typedef struct {
 } Elf64_Verdaux;
 
 typedef struct {
+	Elf32_Half vn_version;
+	Elf32_Half vn_cnt;
+	Elf32_Word vn_file;
+	Elf32_Word vn_aux;
+	Elf32_Word vn_next;
+} Elf32_Verneed;
+
+typedef struct {
 	Elf64_Half vn_version;
 	Elf64_Half vn_cnt;
 	Elf64_Word vn_file;
 	Elf64_Word vn_aux;
 	Elf64_Word vn_next;
 } Elf64_Verneed;
+
+typedef struct {
+	Elf32_Word vna_hash;
+	Elf32_Half vna_flags;
+	Elf32_Half vna_other;
+	Elf32_Word vna_name;
+	Elf32_Word vna_next;
+} Elf32_Vernaux;
 
 typedef struct {
 	Elf64_Word vna_hash;
@@ -148,7 +164,7 @@ enum {
 	ET_REL = 1,
 	ET_EXEC = 2,
 	ET_DYN = 3,
-	ET_CORE = 4,
+	ET_CORE = 4
 };
 
 enum {
@@ -157,7 +173,7 @@ enum {
 };
 
 enum {
-	STN_UNDEF = 0,
+	STN_UNDEF = 0
 };
 
 typedef struct {
@@ -239,7 +255,7 @@ enum {
 	R_X86_64_PC64 = 24,
 	R_X86_64_GOTPC32 = 26,
 	R_X86_64_TLSDESC = 36,
-	R_X86_64_IRELATIVE = 37,
+	R_X86_64_IRELATIVE = 37
 };
 
 enum {
@@ -254,7 +270,7 @@ enum {
 	R_386_TLS_DTPMOD32 = 35,
 	R_386_TLS_DTPOFF32 = 36,
 	R_386_TLS_DESC = 41,
-	R_386_IRELATIVE = 42,
+	R_386_IRELATIVE = 42
 };
 
 enum {
@@ -268,7 +284,7 @@ enum {
 	R_AARCH64_TLS_DTPREL64 = 1029,
 	R_AARCH64_TLS_TPREL64 = 1030,
 	R_AARCH64_TLSDESC = 1031,
-	R_AARCH64_IRELATIVE = 1032,
+	R_AARCH64_IRELATIVE = 1032
 };
 
 #define R_AARCH64_TLS_DTPREL R_AARCH64_TLS_DTPREL64
@@ -290,6 +306,36 @@ enum {
 	R_RISCV_TLS_TPREL64 = 11,
 	R_RISCV_TLSDESC = 12, /* currently a draft but looking good */
 	R_RISCV_IRELATIVE = 58
+};
+
+enum {
+	R_68K_NONE = 0,
+	R_68K_32 = 1,
+	R_68K_PC32 = 4,
+	R_68K_COPY = 19,
+	R_68K_GLOB_DAT = 20,
+	R_68K_JMP_SLOT = 21,
+	R_68K_RELATIVE = 22,
+
+	R_68K_TLS_DTPMOD32 = 40,
+	R_68K_TLS_DTPREL32= 41,
+	R_68K_TLS_TPREL32= 42
+};
+
+enum {
+	R_LARCH_NONE = 0,
+	R_LARCH_32 = 1,
+	R_LARCH_64 = 2,
+	R_LARCH_RELATIVE = 3,
+	R_LARCH_COPY = 4,
+	R_LARCH_JUMP_SLOT = 5,
+	R_LARCH_TLS_DTPMOD32 = 6,
+	R_LARCH_TLS_DTPMOD64 = 7,
+	R_LARCH_TLS_DTPREL32 = 8,
+	R_LARCH_TLS_DTPREL64 = 9,
+	R_LARCH_TLS_TPREL32 = 10,
+	R_LARCH_TLS_TPREL64 = 11,
+	R_LARCH_IRELATIVE = 12
 };
 
 typedef struct {
@@ -356,7 +402,7 @@ enum {
 	PT_LOPROC = 0x70000000,
 	PT_ARM_EXIDX = 0x70000001,
 	PT_RISCV_ATTRIBUTES = 0x70000003,
-	PT_HIPROC = 0x7fffffff,
+	PT_HIPROC = 0x7fffffff
 };
 
 enum {
@@ -582,6 +628,7 @@ typedef struct {
 #define EM_BLACKFIN		106
 #define EM_AARCH64		183
 #define EM_RISCV		243
+#define EM_LOONGARCH	258
 
 /* Linux notes this value as being interim; however applications are using this (Qt6), so we define it here. */
 #define EM_ALPHA		0x9026
@@ -655,6 +702,10 @@ typedef struct {
 #define AT_EUID 12
 #define AT_GID 13
 #define AT_EGID 14
+
+/* Values for Elfxx_Verdef::vd_flags and Elfxx_Vernaux::vna_flags */
+#define VER_FLG_BASE 1 /* Version definition of the file itself */
+#define VER_FLG_WEAK 2 /* Weak version identifier */
 
 /* rtld requires presence of some a_type (AT_*) values that are not standardized in the ELF spec */
 #if !defined(AT_EXECFN) || !defined(AT_RANDOM) || !defined(AT_SECURE)

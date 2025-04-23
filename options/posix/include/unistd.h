@@ -36,10 +36,6 @@ extern "C" {
 #define _POSIX_THREAD_SAFE_FUNCTIONS _POSIX_VERSION
 #define _POSIX_MONOTONIC_CLOCK 0
 
-#if __MLIBC_CRYPT_OPTION
-#define _XOPEN_CRYPT 1
-#endif
-
 /* MISSING: additional _POSIX and _XOPEN feature macros */
 /* MISSING: _POSIX_TIMESTAMP_RESOLUTION and _POSIX2_SYMLINKS */
 
@@ -237,6 +233,13 @@ extern "C" {
 #define _SC_TRACE_INHERIT 183
 #define _SC_TRACE_LOG 184
 
+/* Port-specific _SC_* define values */
+
+#if defined (__ironclad__)
+#define _SC_TOTAL_PAGES 1000
+#define _SC_HOST_OPEN_MAX 1001
+#endif /* defined (__ironclad__) */
+
 #define STDERR_FILENO 2
 #define STDIN_FILENO 0
 #define STDOUT_FILENO 1
@@ -245,9 +248,14 @@ extern "C" {
 
 #define L_ctermid 20
 
-#ifndef intptr_t
+/*
+ * Solving this likely requires us to 'factor out' the typedef into a new
+ * header file, or use a mechanism like musl's __NEED_intptr_t.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
 typedef __mlibc_intptr intptr_t;
-#endif
+#pragma GCC diagnostic pop
 
 #ifndef __MLIBC_ABI_ONLY
 
@@ -383,12 +391,6 @@ int setdomainname(const char *__name, size_t __len);
 
 int getresuid(uid_t *__ruid, uid_t *__euid, uid_t *__suid);
 int getresgid(gid_t *__rgid, gid_t *__egid, gid_t *__sgid);
-
-/* Glibc doesn't provide them by default anymore, lock behind an option */
-#if __MLIBC_CRYPT_OPTION
-char *crypt(const char *__key, const char *__salt);
-void encrypt(char __block[64], int __flags);
-#endif
 
 #endif /* !__MLIBC_ABI_ONLY */
 

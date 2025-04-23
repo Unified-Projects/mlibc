@@ -1,4 +1,5 @@
 #include <asm/ioctls.h>
+#include <ctype.h>
 #include <errno.h>
 #include <limits.h>
 
@@ -8,7 +9,9 @@
 #include <bits/ensure.h>
 #include <abi-bits/fcntl.h>
 #include <abi-bits/socklen_t.h>
-#include <abi-bits/statx.h>
+#if __MLIBC_LINUX_OPTION
+#  include <abi-bits/statx.h>
+#endif
 #include <mlibc/allocator.hpp>
 #include <mlibc/debug.hpp>
 #include <mlibc/all-sysdeps.hpp>
@@ -67,6 +70,13 @@ struct user_desc {
 
 #endif
 
+#if defined(__m68k__)
+extern "C" void *__m68k_read_tp() {
+	auto ret = do_syscall(__NR_get_thread_area, 0);
+	return (void *)ret;
+}
+#endif
+
 int sys_tcb_set(void *pointer) {
 #if defined(__x86_64__)
 	auto ret = do_syscall(SYS_arch_prctl, 0x1002 /* ARCH_SET_FS */, pointer);
@@ -93,6 +103,13 @@ int sys_tcb_set(void *pointer) {
 #elif defined (__aarch64__)
 	uintptr_t thread_data = reinterpret_cast<uintptr_t>(pointer) + sizeof(Tcb) - 0x10;
 	asm volatile ("msr tpidr_el0, %0" :: "r"(thread_data));
+#elif defined (__m68k__)
+	auto ret = do_syscall(__NR_set_thread_area, (uintptr_t)pointer + 0x7000 + sizeof(Tcb));
+	if(int e = sc_error(ret); e)
+		return e;
+#elif defined(__loongarch64)
+	uintptr_t thread_data = reinterpret_cast<uintptr_t>(pointer) + sizeof(Tcb);
+	asm volatile ("move $tp, %0" :: "r"(thread_data));
 #else
 #error "Missing architecture specific code."
 #endif
@@ -237,6 +254,13 @@ int sys_vm_unmap(void *pointer, size_t size) {
 	return 0;
 }
 
+int sys_vm_protect(void *pointer, size_t size, int prot) {
+	auto ret = do_syscall(SYS_mprotect, pointer, size, prot);
+	if (int e = sc_error(ret); e)
+		return e;
+	return 0;
+}
+
 // All remaining functions are disabled in ldso.
 #ifndef MLIBC_BUILDING_RTLD
 
@@ -289,6 +313,7 @@ int sys_stat(fsfd_target fsfdt, int fd, const char *path, int flags, struct stat
 	return 0;
 }
 
+#if __MLIBC_LINUX_OPTION
 static_assert(sizeof(struct statx) == 0x100); // Linux kernel requires it to be precisely 256 bytes.
 
 int sys_statx(int dirfd, const char *path, int flags, unsigned int mask, struct statx *statxbuf) {
@@ -297,6 +322,7 @@ int sys_statx(int dirfd, const char *path, int flags, unsigned int mask, struct 
 		return e;
 	return 0;
 }
+#endif
 
 int sys_statfs(const char *path, struct statfs *buf) {
 	auto ret = do_cp_syscall(SYS_statfs, path, buf);
@@ -604,7 +630,7 @@ int sys_clone(void *tcb, pid_t *pid_out, void *stack) {
 		| CLONE_THREAD | CLONE_SYSVSEM | CLONE_SETTLS
 		| CLONE_PARENT_SETTID;
 
-#if defined(__riscv)
+#if defined(__riscv) || defined(__loongarch64)
 	// TP should point to the address immediately after the TCB.
 	// TODO: We should change the sysdep so that we don't need to do this.
 	auto tls = reinterpret_cast<char *>(tcb) + sizeof(Tcb);
@@ -657,6 +683,10 @@ int sys_before_cancellable_syscall(ucontext_t *uct) {
 #elif defined(__riscv)
 	auto pc = reinterpret_cast<void*>(uct->uc_mcontext.gregs[REG_PC]);
 #elif defined(__aarch64__)
+	auto pc = reinterpret_cast<void*>(uct->uc_mcontext.pc);
+#elif defined(__m68k__)
+	auto pc = reinterpret_cast<void*>(uct->uc_mcontext.gregs[R_PC]);
+#elif defined(__loongarch64)
 	auto pc = reinterpret_cast<void*>(uct->uc_mcontext.pc);
 #else
 #error "Missing architecture specific code."
@@ -961,30 +991,6 @@ int sys_madvise(void *addr, size_t length, int advice) {
 	return 0;
 }
 
-int sys_posix_madvise(void *addr, size_t length, int advice) {
-	if(advice == POSIX_MADV_DONTNEED) {
-		// POSIX_MADV_DONTNEED is a no-op in both glibc and musl.
-		return 0;
-	}
-	switch(advice) {
-	case POSIX_MADV_NORMAL:
-		advice = MADV_NORMAL;
-		break;
-	case POSIX_MADV_RANDOM:
-		advice = MADV_RANDOM;
-		break;
-	case POSIX_MADV_SEQUENTIAL:
-		advice = MADV_SEQUENTIAL;
-		break;
-	case POSIX_MADV_WILLNEED:
-		advice = MADV_WILLNEED;
-		break;
-	default:
-		return EINVAL;
-	}
-	return sys_madvise(addr, length, advice);
-}
-
 int sys_msync(void *addr, size_t length, int flags) {
 	auto ret = do_syscall(SYS_msync, addr, length, flags);
 	if (int e = sc_error(ret); e)
@@ -1084,6 +1090,13 @@ int sys_timerfd_create(int clockid, int flags, int *fd) {
 
 int sys_timerfd_settime(int fd, int flags, const struct itimerspec *value, struct itimerspec *oldvalue) {
 	auto ret = do_syscall(SYS_timerfd_settime, fd, flags, value, oldvalue);
+	if (int e = sc_error(ret); e)
+		return e;
+	return 0;
+}
+
+int sys_timerfd_gettime(int fd, struct itimerspec *its) {
+	auto ret = do_syscall(SYS_timerfd_gettime, fd, its);
 	if (int e = sc_error(ret); e)
 		return e;
 	return 0;
@@ -1238,6 +1251,20 @@ int sys_setschedparam(void *tcb, int policy, const struct sched_param *param) {
 	}
 
 	auto ret = do_syscall(SYS_sched_setscheduler, t->tid, policy, param);
+	if (int e = sc_error(ret); e)
+		return e;
+	return 0;
+}
+
+int sys_getparam(pid_t pid, struct sched_param *param) {
+	auto ret = do_syscall(SYS_sched_getparam, pid, param);
+	if (int e = sc_error(ret); e)
+		return e;
+	return 0;
+}
+
+int sys_setparam(pid_t pid, const struct sched_param *param) {
+	auto ret = do_syscall(SYS_sched_setparam, pid, param);
 	if (int e = sc_error(ret); e)
 		return e;
 	return 0;
@@ -1442,11 +1469,15 @@ int sys_link(const char *old_path, const char *new_path) {
 		return e;
 	return 0;
 #else
-	auto ret = do_syscall(SYS_linkat, AT_FDCWD, old_path, AT_FDCWD, new_path, 0);
+	return sys_linkat(AT_FDCWD, old_path, AT_FDCWD, new_path, 0);
+#endif
+}
+
+int sys_linkat(int olddirfd, const char *old_path, int newdirfd, const char *new_path, int flags) {
+	auto ret = do_syscall(SYS_linkat, olddirfd, old_path, newdirfd, new_path, flags);
 	if (int e = sc_error(ret); e)
 		return e;
 	return 0;
-#endif
 }
 
 // Inspired by musl (src/stat/statvfs.c:28 fixup function)
@@ -1555,6 +1586,16 @@ int sys_waitid(idtype_t idtype, id_t id, siginfo_t *info, int options) {
 	return sc_int_result<int>(ret);
 }
 
+int sys_clock_set(int clock, time_t secs, long nanos) {
+	struct timespec tp{};
+	tp.tv_sec = secs;
+	tp.tv_nsec = nanos;
+	auto ret = do_syscall(SYS_clock_settime, clock, &tp);
+	if (int e = sc_error(ret); e)
+		return e;
+	return 0;
+}
+
 #endif // __MLIBC_POSIX_OPTION
 
 #if __MLIBC_LINUX_OPTION
@@ -1577,6 +1618,56 @@ int sys_getifaddrs(struct ifaddrs **out) {
 	bool addr_ret = nl.send_request(RTM_GETADDR) && nl.recv(&getifaddrs_callback, out);
 	__ensure(addr_ret);
 
+	return 0;
+}
+
+int sys_pidfd_open(pid_t pid, unsigned int flags, int *outfd) {
+	auto ret = do_syscall(SYS_pidfd_open, pid, flags);
+	if (int e = sc_error(ret); e)
+		return e;
+	*outfd = sc_int_result<int>(ret);
+	return 0;
+}
+
+namespace {
+
+char *pidfdGetPidLine = nullptr;
+size_t pidfdGetPidLineSize = 0;
+
+} // namespace
+
+int sys_pidfd_getpid(int fd, pid_t *outpid) {
+	char *path = nullptr;
+	asprintf(&path, "/proc/self/fdinfo/%d", fd);
+
+	FILE *fdinfo = fopen(path, "r");
+	if (!fdinfo)
+		return errno;
+
+	while (getline(&pidfdGetPidLine, &pidfdGetPidLineSize, fdinfo) != -1) {
+		pid_t pid;
+		int ret = sscanf(pidfdGetPidLine, "Pid: %d\n", &pid);
+
+		if(ret != 1)
+			continue;
+
+		if (pid == 0)
+			return EREMOTE;
+		else if (pid == -1)
+			return ESRCH;
+
+		*outpid = pid;
+		return 0;
+	}
+
+	free(path);
+	return EBADF;
+}
+
+int sys_pidfd_send_signal(int pidfd, int sig, siginfo_t *info, unsigned int flags) {
+	auto ret = do_syscall(SYS_pidfd_send_signal, pidfd, sig, info, flags);
+	if (int e = sc_error(ret); e)
+		return e;
 	return 0;
 }
 
@@ -1628,13 +1719,6 @@ gid_t sys_getegid() {
 
 int sys_kill(int pid, int sig) {
 	auto ret = do_syscall(SYS_kill, pid, sig);
-	if (int e = sc_error(ret); e)
-		return e;
-	return 0;
-}
-
-int sys_vm_protect(void *pointer, size_t size, int prot) {
-	auto ret = do_syscall(SYS_mprotect, pointer, size, prot);
 	if (int e = sc_error(ret); e)
 		return e;
 	return 0;
@@ -1787,6 +1871,18 @@ int sys_readlink(const char *path, void *buf, size_t bufsiz, ssize_t *len) {
 	*len = sc_int_result<ssize_t>(ret);
 	return 0;
 }
+
+#if __MLIBC_BSD_OPTION
+// getloadavg() adapted from musl
+int sys_getloadavg(double *samples) {
+	struct sysinfo si;
+	if (int e = sys_sysinfo(&si); e)
+		return e;
+	for (int i = 0; i < 3; i++)
+		samples[i] = 1.0 / (1 << SI_LOAD_SHIFT) * si.loads[i];
+	return 0;
+}
+#endif /* __MLIBC_BSD_OPTION */
 
 int sys_getrlimit(int resource, struct rlimit *limit) {
 	auto ret = do_syscall(SYS_prlimit64, 0, resource, 0, limit);
@@ -2008,6 +2104,63 @@ int sys_sigtimedwait(const sigset_t *__restrict set, siginfo_t *__restrict info,
 	return 0;
 }
 
+int sys_sendfile(int outfd, int infd, off_t *offset, size_t count, ssize_t *out) {
+	auto ret = do_syscall(SYS_sendfile, outfd, infd, offset, count);
+	if(int e = sc_error(ret); e) {
+		return e;
+	}
+	*out = sc_int_result<ssize_t>(ret);
+	return 0;
+}
+
+int sys_syncfs(int fd) {
+	auto ret = do_syscall(SYS_syncfs, fd);
+	if(int e = sc_error(ret); e) {
+		return e;
+	}
+	return 0;
+}
+
+int sys_name_to_handle_at(int dirfd, const char *pathname, struct file_handle *handle, int *mount_id, int flags) {
+	auto ret = do_syscall(SYS_name_to_handle_at, dirfd, pathname, handle, mount_id, flags);
+	if (int e = sc_error(ret); e)
+		return e;
+	return sc_int_result<int>(ret);
+}
+
+int sys_splice(int in_fd, off_t *in_off, int out_fd, off_t *out_off, size_t size, unsigned int flags, ssize_t *out) {
+	auto ret = do_syscall(SYS_copy_file_range, in_fd, in_off, out_fd, out_off, size, flags);
+	if(int e = sc_error(ret); e) {
+		return e;
+	}
+	*out = sc_int_result<ssize_t>(ret);
+	return 0;
+}
+
+int sys_unshare(int flags) {
+	auto ret = do_syscall(SYS_unshare, flags);
+	if(int e = sc_error(ret); e) {
+		return e;
+	}
+	return 0;
+}
+
+int sys_setns(int fd, int nstype) {
+	auto ret = do_syscall(SYS_setns, fd, nstype);
+	if(int e = sc_error(ret); e) {
+		return e;
+	}
+	return 0;
+}
+
+int sys_setgroups(size_t size, const gid_t *list) {
+	auto ret = do_syscall(SYS_setgroups, size, list);
+	if(int e = sc_error(ret); e) {
+		return e;
+	}
+	return 0;
+}
+
 #if __MLIBC_BSD_OPTION
 int sys_brk(void **out) {
 	auto ret = do_syscall(SYS_brk, 0);
@@ -2066,5 +2219,40 @@ int sys_iopl(int level) {
 }
 
 #endif // __MLIBC_GLIBC_OPTION
+
+#if __MLIBC_POSIX_OPTION
+
+int sys_shmat(void **seg_start, int shmid, const void *shmaddr, int shmflg) {
+	auto ret = do_syscall(SYS_shmat, shmid, shmaddr, shmflg);
+	if (int e = sc_error(ret); e)
+		return e;
+	*seg_start = sc_ptr_result<void>(ret);
+	return 0;
+}
+
+int sys_shmctl(int *idx, int shmid, int cmd, struct shmid_ds *buf) {
+	auto ret = do_syscall(SYS_shmctl, shmid, cmd, buf);
+	if (int e = sc_error(ret); e)
+		return e;
+	*idx = sc_int_result<int>(ret);
+	return 0;
+}
+
+int sys_shmdt(const void *shmaddr) {
+	auto ret = do_syscall(SYS_shmdt, shmaddr);
+	if (int e = sc_error(ret); e)
+		return e;
+	return 0;
+}
+
+int sys_shmget(int *shm_id, key_t key, size_t size, int shmflg) {
+	auto ret = do_syscall(SYS_shmget, key, size, shmflg);
+	if (int e = sc_error(ret); e)
+		return e;
+	*shm_id = sc_int_result<int>(ret);
+	return 0;
+}
+
+#endif // __MLIBC_POSIX_OPTION
 
 } // namespace mlibc

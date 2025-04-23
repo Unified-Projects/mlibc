@@ -1,3 +1,10 @@
+sysdep_supported_options = {
+	'posix': true,
+	'linux': true,
+	'glibc': true,
+	'bsd': true,
+}
+
 rtld_dso_sources += files(
 	host_machine.cpu_family() / 'arch-syscall.cpp',
 	'generic/sysdeps.cpp',
@@ -17,7 +24,7 @@ libc_sources += files(
 	'generic/sysdeps.cpp',
 )
 
-if not disable_posix_option
+if get_option('posix_option').allowed()
 	libc_sources += files(
 		'generic/thread.cpp',
 		host_machine.cpu_family() / 'cp_syscall.S',
@@ -62,6 +69,7 @@ if not no_headers
 		'include/abi-bits/packet.h',
 		'include/abi-bits/inotify.h',
 		'include/abi-bits/clockid_t.h',
+		'include/abi-bits/ipc.h',
 		'include/abi-bits/shm.h',
 		'include/abi-bits/mqueue.h',
 		'include/abi-bits/suseconds_t.h',
@@ -73,6 +81,10 @@ if not no_headers
 		'include/abi-bits/ioctls.h',
 		'include/abi-bits/xattr.h',
 		'include/abi-bits/msg.h',
+		'include/abi-bits/random.h',
+		'include/abi-bits/rlim_t.h',
+		'include/abi-bits/sigval.h',
+		'include/abi-bits/sigevent.h',
 		subdir: 'abi-bits',
 		follow_symlinks: true
 	)
@@ -105,23 +117,26 @@ if not headers_only
 		install_dir: get_option('libdir')
 	)
 
-	custom_target('crti',
-		build_by_default: true,
-		command: c_compiler.cmd_array() + ['-c', '-o', '@OUTPUT@', '@INPUT@'],
-		input: host_machine.cpu_family() / 'crt-src/crti.S',
-		output: 'crti.o',
-		install: true,
-		install_dir: get_option('libdir')
-	)
+	# On RISC-V and LoongArch, crti.o and crtn.o are provided by GCC.
+	if host_machine.cpu_family() != 'riscv64' and host_machine.cpu_family() != 'loongarch64'
+		custom_target('crti',
+			build_by_default: true,
+			command: c_compiler.cmd_array() + ['-c', '-o', '@OUTPUT@', '@INPUT@'],
+			input: host_machine.cpu_family() / 'crt-src/crti.S',
+			output: 'crti.o',
+			install: true,
+			install_dir: get_option('libdir')
+		)
 
-	custom_target('crtn',
-		build_by_default: true,
-		command: c_compiler.cmd_array() + ['-c', '-o', '@OUTPUT@', '@INPUT@'],
-		input: host_machine.cpu_family() / 'crt-src/crtn.S',
-		output: 'crtn.o',
-		install: true,
-		install_dir: get_option('libdir')
-	)
+		custom_target('crtn',
+			build_by_default: true,
+			command: c_compiler.cmd_array() + ['-c', '-o', '@OUTPUT@', '@INPUT@'],
+			input: host_machine.cpu_family() / 'crt-src/crtn.S',
+			output: 'crtn.o',
+			install: true,
+			install_dir: get_option('libdir')
+		)
+	endif
 
 	wrapper_conf = configuration_data()
 	wrapper_conf.set('LIBDIR', get_option('libdir'))

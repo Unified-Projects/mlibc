@@ -25,6 +25,7 @@
 #define CLOCK_BOOTTIME 7
 #define CLOCK_REALTIME_ALARM 8
 #define CLOCK_BOOTTIME_ALARM 9
+#define CLOCK_TAI 11
 
 #ifdef __cplusplus
 extern "C" {
@@ -109,8 +110,10 @@ char *asctime_r(const struct tm *__tm, char *__buf);
 char *ctime_r(const time_t *__timer, char *__buf);
 
 #if __MLIBC_POSIX_OPTION
+#include <abi-bits/pid_t.h>
 char *strptime(const char *__restrict __buf, const char *__restrict __format,
 		struct tm *__restrict __tm);
+int clock_getcpuclockid(pid_t __pid, clockid_t *__clockid);
 #endif /* __MLIBC_POSIX_OPTION */
 
 #endif /* !__MLIBC_ABI_ONLY */
@@ -131,21 +134,6 @@ time_t timelocal(struct tm *__tm);
 time_t timegm(struct tm *__tm);
 
 #endif /* !__MLIBC_ABI_ONLY */
-
-#ifdef __cplusplus
-}
-#endif
-
-/* Linux extensions. */
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-struct itimerspec {
-	struct timespec it_interval;
-	struct timespec it_value;
-};
 
 #ifdef __cplusplus
 }
