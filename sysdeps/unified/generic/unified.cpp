@@ -41,6 +41,17 @@ int sys_vm_unmap(void* address, size_t size) {
 	return ret;
 }
 
+int
+sys_vm_protect(void *pointer, size_t size, int prot)
+{
+
+	mlibc::infoLogger() << "mlibc: sys_vm_protect(" << pointer << ", "
+			    << size << ", " << prot << "); stub!"
+			    << frg::endlog;
+	return 0;
+}
+
+
 int sys_anon_allocate(size_t size, void **pointer) {
 	return sys_vm_map(nullptr, size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS, -1, 0, pointer);
 }
@@ -57,6 +68,13 @@ void sys_libc_panic(){
 
 void sys_libc_log(const char* msg){
 	syscall(0, (uintptr_t)msg);
+}
+
+int sys_gethostname(char *buffer, size_t bufsize) {
+	if (bufsize >= 6) {
+		memcpy(buffer, "unified", 8);
+	}
+	return 0;
 }
 
 #ifndef MLIBC_BUILDING_RTLD
@@ -124,6 +142,16 @@ gid_t sys_getgid(){
 
 gid_t sys_getegid(){
 	return syscall(SYS_GETEGID);
+}
+
+int sys_setpgid(pid_t pid, pid_t pgid) {
+	long ret;
+	return syscall(SYS_SETPGID, pid, pgid);
+}
+
+int sys_getpgid(pid_t pid, pid_t *pgid) {
+	long error = syscall(SYS_GETPGID, pid, pgid);
+	return error;
 }
 
 int sys_setgid(gid_t gid){

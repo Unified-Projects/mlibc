@@ -112,6 +112,8 @@
 #define SYS_EPOLL_CTL 109
 #define SYS_EPOLL_WAIT 110
 #define SYS_FCHDIR 111
+#define SYS_GETPGID 112
+#define SYS_SETPGID 113
 
 #ifdef __cplusplus
 extern "C"{

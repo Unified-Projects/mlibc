@@ -37,12 +37,22 @@ int sys_tcsetattr(int fd, int optional_action, const struct termios *attr) {
 	if(int e = sys_isatty(fd))
 		return e;
 
-	if(optional_action){
-		mlibc::infoLogger() << "mlibc warning: sys_tcsetattr ignores optional_action" << frg::endlog;
-	}
-
-	int ret;
-	sys_ioctl(fd, TCSETS, const_cast<struct termios*>(attr), &ret);
+    int cmd;
+    switch (optional_action) {
+    case TCSANOW:
+        cmd = TCSETS;
+        break;
+    case TCSADRAIN:
+        cmd = TCSETSW;
+        break;
+    case TCSAFLUSH:
+        cmd = TCSETSF;
+        break;
+    default:
+        return EINVAL;
+    }
+    int ret;
+    sys_ioctl(fd, cmd, const_cast<struct termios *>(attr), &ret);
 
 	if(ret)
 		return -ret;
@@ -60,4 +70,17 @@ int sys_ptsname(int fd, char *buffer, size_t length) {
 	return 0;
 }
 
+int sys_unlockpt(int fd) {
+	int unlock = 0;
+
+	if (int e = sys_ioctl(fd, TIOCSPTLCK, &unlock, NULL); e)
+		return e;
+
+	return 0;
+}
+
+int sys_setsid(pid_t *sid) {
+    mlibc::infoLogger() << "mlibc: sys_setsid is a stub" << frg::endlog;
+    return 0;
+}
 }

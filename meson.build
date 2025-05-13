@@ -178,7 +178,7 @@ if default_library_paths.length() == 0
 		'loongarch64': 64,
 	}
 	if target_word_size.get(target_machine.cpu_family()) == 64
-		default_library_paths = ['/lib', '/lib64', '/usr/lib', '/usr/lib64']
+		default_library_paths = ['/system/lib', '/lib', '/lib64', '/usr/lib', '/usr/lib64']
 	else
 		default_library_paths = ['/lib', '/usr/lib']
 	endif

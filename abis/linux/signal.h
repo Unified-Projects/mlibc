@@ -116,9 +116,7 @@ typedef void (*__sighandler) (int);
 #define SIGRTMIN 35
 #define SIGRTMAX 64
 
-typedef struct {
-	unsigned long sig[1024 / (8 * sizeof(long))];
-} sigset_t;
+typedef unsigned long sigset_t;
 
 /* constants for sigprocmask() */
 #define SIG_BLOCK 0

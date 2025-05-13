@@ -1,4 +1,4 @@
-	.ident "x86_64-managarm-mlibc crti"
+	.ident "x86_64-unified-mlibc crti"
 
 	.section .init
 	.globl	_init
