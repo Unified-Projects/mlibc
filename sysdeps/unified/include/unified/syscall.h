@@ -114,6 +114,7 @@
 #define SYS_FCHDIR 111
 #define SYS_GETPGID 112
 #define SYS_SETPGID 113
+#define SYS_SIGSUSPEND 114
 
 #ifdef __cplusplus
 extern "C"{

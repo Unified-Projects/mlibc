@@ -35,4 +35,12 @@ int sys_kill(int pid, int signal){
     return 0;
 }
 
+int sys_sigsuspend(const sigset_t *set) {
+    int ret = syscall(SYS_SIGSUSPEND, (uint64_t)set);
+    if(ret < 0){
+        return -ret;
+    }
+    return 0;
+}
+
 }
