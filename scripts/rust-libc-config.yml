@@ -1,5 +1,5 @@
 includes:
-  - '../../build/tools/system-gcc/lib/gcc/x86_64-managarm/13.2.0/include/'
+  - '../../build/tools/-gcc/lib/gcc/x86_64-managarm/13.2.0/include/'
 
 ignored_files:
   - "abi-bits/limits.h"

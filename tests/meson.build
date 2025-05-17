@@ -73,7 +73,7 @@ all_test_cases = [
 	'posix/semaphore',
 	'posix/open_memstream',
 	'posix/popen',
-	'posix/system', # This test should be in the ANSI tests, but it depends on sys/wait.h
+	'posix/', # This test should be in the ANSI tests, but it depends on sys/wait.h
 	'posix/sigsuspend',
 	'posix/sigaltstack',
 	'posix/time',
