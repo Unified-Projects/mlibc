@@ -123,9 +123,12 @@ int sys_stat(fsfd_target fsfdt, int fd, const char *path, int flags, struct stat
 		case fsfd_target::path:
 			ret = syscall(SYS_STAT, &unifiedStat, path);
 			break;
+		case fsfd_target::fd_path:
+			ret = syscall(SYS_FSTATAT, fd, (uintptr_t)path, (uintptr_t)&unifiedStat, flags);
+			break;
 		default:
-			mlibc::infoLogger() << "mlibc warning: sys_stat: unsupported fsfd target" << frg::endlog;
-			return EINVAL;
+			mlibc::infoLogger() << "mlibc: stat: Unknown fsfd_target: " << (int)fsfdt << frg::endlog;
+			return ENOSYS;
 	}
 
 	statbuf->st_dev = unifiedStat.st_dev;
