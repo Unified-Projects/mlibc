@@ -214,26 +214,36 @@ typedef struct unified_dirent {
 	char name[NAME_MAX]; // Filename
 } unified_dirent_t;
 
-int sys_read_entries(int handle, void *buffer, size_t max_size, size_t *bytes_read){
-	unified_dirent_t unifiedDirent;
-	long ret = syscall(SYS_READDIR_NEXT, handle, &unifiedDirent);
+int sys_read_entries(int handle, void *buffer, size_t max_size, size_t *bytes_read)
+{
+    unified_dirent_t unifiedDirent;
+    long ret = syscall(SYS_READDIR_NEXT, handle, &unifiedDirent);
 
-	if(!ret){
-		*bytes_read = 0;
-		return 0;
-	} else if(ret > 0){
-		dirent* dir = (dirent*)buffer;
-		strcpy(dir->d_name, unifiedDirent.name);
-		dir->d_ino = unifiedDirent.inode;
-		dir->d_off = 0;
-		dir->d_reclen = sizeof(dirent);
-		dir->d_type = unifiedDirent.type;
+    if (ret < 0) {
+        // End of directory?
+        if (ret == -ENOENT) {
+            *bytes_read = 0;
+            return 0;  // EOF
+        }
+        return -ret;  // real error
+    }
+    if (ret == 0) {
+        // No entry read
+        *bytes_read = 0;
+        return 0;
+    }
+    // ret > 0: one entry read
+    struct dirent *dir = (struct dirent *)buffer;
+    // Copy name safely
+    strncpy(dir->d_name, unifiedDirent.name, NAME_MAX - 1);
+    dir->d_name[NAME_MAX - 1] = '\0';
+    dir->d_ino   = unifiedDirent.inode;
+    dir->d_off   = 0;
+    dir->d_reclen = sizeof(struct dirent);
+    dir->d_type  = unifiedDirent.type;
 
-		*bytes_read = sizeof(dirent);
-		return 0;
-	} else {
-		return -ret;
-	}
+    *bytes_read = sizeof(struct dirent);
+    return 0;
 }
 
 int sys_open_dir(const char* path, int* handle){
