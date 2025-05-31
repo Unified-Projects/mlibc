@@ -116,6 +116,8 @@
 #define SYS_SETPGID 113
 #define SYS_SIGSUSPEND 114
 #define SYS_FSTATAT 115
+#define SYS_FSYNC    116
+#define SYS_SYNC     117
 
 #ifdef __cplusplus
 extern "C"{

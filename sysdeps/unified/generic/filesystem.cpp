@@ -308,6 +308,16 @@ int sys_fcntl(int fd, int request, va_list args, int* result){
 	} else if(request == F_SETFL){
 		int ret = syscall(SYS_SET_FILE_STATUS_FLAGS, fd, va_arg(args, int));
 		return -ret;
+	} else if(request == F_GETPIPE_SZ) {
+		// Return a default pipe buffer size (64 KiB)
+		*result = 65536;
+		return 0;
+	} else if(request == F_SETPIPE_SZ) {
+		// Ignore attempts to change pipe size; return the current size
+		int newSize = va_arg(args, int);
+		(void)newSize;
+		*result = 65536;
+		return 0;
 	} else {
 		infoLogger() << "mlibc: sys_fcntl unsupported request (" << request << ")" << frg::endlog;
 		return EINVAL;
@@ -414,6 +424,36 @@ int sys_ttyname(int tty, char *buf, size_t size) {
 int sys_fchdir(int fd) {
 	return syscall(SYS_FCHDIR, fd);
 }
+
+int sys_fsync(int fd)
+{
+    long ret = syscall(SYS_FSYNC, fd);
+    if (ret < 0) {
+        return -ret;   // return positive errno
+    }
+    return 0;
+}
+
+void sys_sync()
+{
+    syscall(SYS_SYNC);
+}
+
+int sys_mount(const char *source, const char *target,
+              const char *fstype, unsigned long flags, void *data)
+{
+    long ret = syscall(SYS_MOUNT,
+                       (uintptr_t)source,
+                       (uintptr_t)target,
+                       (uintptr_t)fstype,
+                       flags,
+                       (uintptr_t)data);
+    if (ret < 0) {
+        return -ret;   // return positive errno
+    }
+    return 0;
+}
+
 #endif
 
 }
