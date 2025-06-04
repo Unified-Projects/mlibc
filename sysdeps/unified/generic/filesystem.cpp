@@ -97,6 +97,14 @@ int sys_open(const char* filename, int flags, mode_t mode, int* fd){
 	return 0;
 }
 
+int sys_openat(int dirfd, const char* path, int flags, mode_t mode, int *fd) {
+    long ret = syscall(SYS_OPENAT, dirfd, (uintptr_t)path, flags, mode);
+    if (ret < 0)
+        return -ret;
+    *fd = ret;
+    return 0;
+}
+
 int sys_close(int fd){
 	syscall(SYS_CLOSE, fd);
 	return 0;
@@ -154,6 +162,8 @@ int sys_ioctl(int fd, unsigned long request, void *arg, int *result){
 	return 0;
 }
 
+int sys_mkdirat(int dirfd, const char *path, mode_t mode);
+
 #ifndef MLIBC_BUILDING_RTLD
 
 int sys_poll(struct pollfd *fds, nfds_t count, int timeout, int *num_events){
@@ -170,12 +180,42 @@ int sys_poll(struct pollfd *fds, nfds_t count, int timeout, int *num_events){
 
 int sys_mkdir(const char* path, mode_t){
 	long ret = syscall(SYS_MKDIR, path);
-
 	if(ret < 0){
 		return -ret;
 	}
-
 	return 0;
+}
+
+int sys_mkdirat(int dirfd, const char *path, mode_t mode)
+{
+    long ret = syscall(SYS_MKDIRAT, dirfd, (uintptr_t)path, mode);
+    if (ret < 0)
+        return -ret;
+    return 0;
+}
+
+int sys_sendfile(int out_fd, int in_fd, off_t *offset, size_t count, ssize_t *bytes_sent) {
+    long ret = syscall(SYS_SENDFILE, out_fd, in_fd, (uintptr_t)offset, count);
+    if (ret < 0) {
+        return (int)(-ret);
+    }
+    *bytes_sent = ret;
+    return 0;
+}
+
+int sys_copy_file_range(int fd_in, off_t *off_in, int fd_out, off_t *off_out, size_t len, unsigned flags, ssize_t *bytes_copied) {
+    long ret = syscall(SYS_COPY_FILE_RANGE,
+                       fd_in,
+                       (uintptr_t)off_in,
+                       fd_out,
+                       (uintptr_t)off_out,
+                       len,
+                       flags);
+    if (ret < 0) {
+        return (int)(-ret);
+    }
+    *bytes_copied = ret;
+    return 0;
 }
 
 int sys_rmdir(const char* path){
@@ -206,44 +246,6 @@ int sys_unlinkat(int fd, const char *path, int flags) {
 	}
 
 	return 0;
-}
-
-typedef struct unified_dirent {
-	uint32_t inode; // Inode number
-	uint32_t type;
-	char name[NAME_MAX]; // Filename
-} unified_dirent_t;
-
-int sys_read_entries(int handle, void *buffer, size_t max_size, size_t *bytes_read)
-{
-    unified_dirent_t unifiedDirent;
-    long ret = syscall(SYS_READDIR_NEXT, handle, &unifiedDirent);
-
-    if (ret < 0) {
-        // End of directory?
-        if (ret == -ENOENT) {
-            *bytes_read = 0;
-            return 0;  // EOF
-        }
-        return -ret;  // real error
-    }
-    if (ret == 0) {
-        // No entry read
-        *bytes_read = 0;
-        return 0;
-    }
-    // ret > 0: one entry read
-    struct dirent *dir = (struct dirent *)buffer;
-    // Copy name safely
-    strncpy(dir->d_name, unifiedDirent.name, NAME_MAX - 1);
-    dir->d_name[NAME_MAX - 1] = '\0';
-    dir->d_ino   = unifiedDirent.inode;
-    dir->d_off   = 0;
-    dir->d_reclen = sizeof(struct dirent);
-    dir->d_type  = unifiedDirent.type;
-
-    *bytes_read = sizeof(struct dirent);
-    return 0;
 }
 
 int sys_open_dir(const char* path, int* handle){
@@ -280,6 +282,73 @@ int sys_dup2(int fd, int flags, int newfd){
 		return -ret;
 	}
 
+	return 0;
+}
+
+typedef struct unified_dirent {
+	uint32_t inode; // Inode number
+	uint32_t type;
+	char name[NAME_MAX]; // Filename
+} unified_dirent_t;
+
+int sys_read_entries(int handle, void *buffer, size_t max_size, size_t *bytes_read) {
+    size_t total_bytes = 0;
+    char *out_buf = reinterpret_cast<char *>(buffer);
+
+    // Read entries until buffer is full or no more entries.
+    while (true) {
+        // Check if there's enough space for at least one struct dirent
+        if (max_size - total_bytes < sizeof(struct dirent))
+            break;
+
+        unified_dirent_t unifiedDirent;
+        long ret = syscall(SYS_READDIR_NEXT, handle, &unifiedDirent);
+
+        // If no more entries (ret == 0) or end-of-directory error (ret == -ENOENT), exit loop.
+        if (ret <= 0) {
+            if (ret < 0 && ret != -ENOENT) {
+                return -ret; // Propagate any error aside from EOF
+            }
+            break; // EOF or no entry
+        }
+        // ret > 0: one entry read successfully
+        struct dirent *dir = reinterpret_cast<struct dirent *>(out_buf + total_bytes);
+
+        // Copy fields from unified_dirent_t to struct dirent
+        dir->d_ino = unifiedDirent.inode;
+        dir->d_off = 0; // Offset not used
+        dir->d_reclen = sizeof(struct dirent);
+        dir->d_type = unifiedDirent.type;
+        // Copy name safely, ensuring null-termination
+        strncpy(dir->d_name, unifiedDirent.name, NAME_MAX - 1);
+        dir->d_name[NAME_MAX - 1] = '\0';
+
+        total_bytes += sizeof(struct dirent);
+    }
+
+    *bytes_read = total_bytes;
+    return 0;
+}
+
+int sys_mount(const char *source, const char *target, const char *fstype, unsigned long flags, const void *data)
+{
+    long ret = syscall(SYS_MOUNT,
+                       (uintptr_t)source,
+                       (uintptr_t)target,
+                       (uintptr_t)fstype,
+                       flags,
+                       (uintptr_t)data);
+    if (ret < 0) {
+        return -ret;   // return positive errno
+    }
+    return 0;
+}
+
+int sys_umount2(const char *target, int flags) {
+	long ret = syscall(SYS_UNMOUNT, target, flags);
+	if (ret < 0) {
+        return -ret;   // return positive errno
+    }
 	return 0;
 }
 
@@ -437,21 +506,6 @@ int sys_fsync(int fd)
 void sys_sync()
 {
     syscall(SYS_SYNC);
-}
-
-int sys_mount(const char *source, const char *target,
-              const char *fstype, unsigned long flags, void *data)
-{
-    long ret = syscall(SYS_MOUNT,
-                       (uintptr_t)source,
-                       (uintptr_t)target,
-                       (uintptr_t)fstype,
-                       flags,
-                       (uintptr_t)data);
-    if (ret < 0) {
-        return -ret;   // return positive errno
-    }
-    return 0;
 }
 
 #endif

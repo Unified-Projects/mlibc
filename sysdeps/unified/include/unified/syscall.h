@@ -118,6 +118,11 @@
 #define SYS_FSTATAT 115
 #define SYS_FSYNC    116
 #define SYS_SYNC     117
+#define SYS_UNMOUNT     118
+#define SYS_MKDIRAT     119
+#define SYS_OPENAT     120
+#define SYS_SENDFILE            121
+#define SYS_COPY_FILE_RANGE     122
 
 #ifdef __cplusplus
 extern "C"{
