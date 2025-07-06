@@ -1,4 +1,4 @@
-.ident "x86_64-managarm-mlibc crtn"
+.ident "x86_64-unified-mlibc crtn"
 
 .section .init
 	pop %rax
